@@ -5,6 +5,10 @@ This is an alpha an may be unstable.
 External Window similar to classic render view (redshift, vray, arnold IPR).
 This open an external UI and stream a rendered viewport matching the render resolution.
 
+Open Render view with default shortcut
+
+CTRL ALT R
+
 Currently working feature :
 
 - Save current render to png
