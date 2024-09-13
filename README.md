@@ -1,4 +1,4 @@
-Blender Render View 
+Blender Render View.
 This is an alpha an may be unstable.
 
 External Window similar to classic render view (redshift, vray, arnold IPR).
