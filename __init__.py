@@ -392,26 +392,18 @@ def run_compiled_script():
 def start_external_script():
     
     global extUiProc
-    executable_path = os.path.join(script_dir,"dist/RenderWindow_ui.exe")  
-    filepath = os.path.join(script_dir,"RenderView_ui.py")
-
-    # # path to python.exe
-    # python_exe = os.path.join(sys.prefix, 'bin', 'python.exe')
     
-    # # upgrade pip
-    # subprocess.call([python_exe, "-m", "ensurepip"])
-    # subprocess.call([python_exe, "-m", "pip", "install", "--upgrade", "pip"])
+    executable_path = os.path.join(script_dir," RenderView_ui.exe")  
+    extUiProc = Popen([executable_path])
     
-    # # install required packages
-    # subprocess.call([python_exe, "-m", "pip", "install", "pyside6"])
-    # subprocess.call([python_exe, "-m", "pip", "install", "pyautogui"])
-    # subprocess.call([python_exe, "-m", "pip", "install", "pygetwindow"])
-    # subprocess.call([python_exe, "-m", "pip", "install", "pywin32"])
-    # print("DONE")
 
-    #exec(compile(open(filepath).read(), filepath, 'exec'))
-    extUiProc = Popen(['python', filepath])
-    #extUiProc = Popen([executable_path])
+    # For active developement only
+    # Using local python, I was unable to make it work using blender's python and installing module pyside6, pyautogui, pygetwindow, pywin32
+    # Moreoever blender extension guidelines seems to not accept any pip install
+    # filepath = os.path.join(script_dir,"RenderView_ui.py")
+    # extUiProc = Popen(['python', filepath])
+
+
 
 if __name__ == "__main__":
     register()
