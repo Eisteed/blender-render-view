@@ -994,13 +994,18 @@ class MainWindow(QMainWindow):
             x_offset, y_offset = get_centered_offset(base_pixmap, max_width, max_height)
             painter.drawPixmap(x_offset, y_offset, base_pixmap)
 
-        if overlay_A and overlay_B:
+        if overlay_A or overlay_B:
             self.viewer.line_item.setVisible(True)
             self.viewer.rect_item.setVisible(True)
-            #painter.drawPixmap(0, 0, self.apply_line_mask(base_pixmap, overlay_A, overlay_B, self.viewer.line_item))
-            masked_pixmap = self.apply_line_mask(base_pixmap, overlay_A, overlay_B, self.viewer.line_item)
-            x_offset, y_offset = get_centered_offset(masked_pixmap, max_width, max_height)
-            painter.drawPixmap(x_offset, y_offset, masked_pixmap)
+            if overlay_A:
+                masked_pixmap = self.apply_line_mask(base_pixmap, overlay_A, base_pixmap, self.viewer.line_item)
+                x_offset, y_offset = get_centered_offset(masked_pixmap, max_width, max_height)
+                painter.drawPixmap(x_offset, y_offset, masked_pixmap)
+            if overlay_B:
+                masked_pixmap = self.apply_line_mask(base_pixmap, base_pixmap, overlay_B, self.viewer.line_item)
+                x_offset, y_offset = get_centered_offset(masked_pixmap, max_width, max_height)
+                painter.drawPixmap(x_offset, y_offset, masked_pixmap)
+            
         else:
             self.viewer.line_item.setVisible(False)
             self.viewer.rect_item.setVisible(False)
