@@ -18,15 +18,25 @@ HOST = '127.0.0.1'
 status = {'status': 'initial'}  # Global status variable
 status_lock = threading.Lock()  # Lock for thread-safe access to status
 WIN_HANDLES = None
-script_dir = os.path.dirname(os.path.abspath(__file__))
+
+
+def resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
+script_dir = resource_path(os.path.dirname(os.path.abspath(__file__)))
 
 ########################################
 ### Blender Data & window Monitoring ###
 ########################################
 
 class Blender:
-    resolution_x = 1920
-    resolution_y = 1080
+    resolution_x = 10
+    resolution_y = 10
     resolution_percentage = 100
     titleHeight = 0
     mainWindow = None
@@ -54,8 +64,9 @@ class BlenderWindowMonitor:
         SocketClient.update_status('extui_waiting')
         existingWindow = cls.find_blender_windows()
         while True:
-            
+            print(f"Status: " + status)
             if status == "viewport_created":
+                print(f"[BlenderRenderView] Viewport found ! Loading..")
                 current_windows = cls.find_blender_windows()
                 # Find the window that is not in existing_windows
                 new_window = [window for window in current_windows if window not in existingWindow]
@@ -123,7 +134,7 @@ class BlenderWindowMonitor:
 
 class SocketClient:
     HOST = '127.0.0.1'
-    PORT = 42069
+    PORT = 42082
     client_socket = None
     listener_thread = None
 
@@ -158,12 +169,12 @@ class SocketClient:
         if 'status' in message:
             cls.update_local_status(message['status'])
         if 'resolution_x' in message:
+            
             Blender.resolution_x = message['resolution_x']
             Blender.resolution_y = message['resolution_y']
             Blender.resolution_percentage = message['resolution_percentage']
             BlenderWindowMonitor.resize_window_to_resolution()
         if 'renderview_running' in message:
-            print("ok")
             mainWin.fitToZoom()
 
     @classmethod
@@ -846,6 +857,7 @@ class MainWindow(QMainWindow):
         button_data = [
             (os.path.join(script_dir, 'icons/save.png'), self.saveAs),
             (os.path.join(script_dir, 'icons/snapshot.png'), self.snapshot),
+            (os.path.join(script_dir, 'icons/fit.png'), self.fitToWindow),
             (os.path.join(script_dir, 'icons/ratio.png'), self.fitToZoom),
             (os.path.join(script_dir, 'icons/region.png'), self.renderRegion),
         ]
@@ -997,15 +1009,23 @@ class MainWindow(QMainWindow):
         if overlay_A or overlay_B:
             self.viewer.line_item.setVisible(True)
             self.viewer.rect_item.setVisible(True)
-            if overlay_A:
+
+            if overlay_A and overlay_B:
+                # Compare overlay_A to overlay_B directly (A/B mode)
+                masked_pixmap = self.apply_line_mask(overlay_A, overlay_A, overlay_B, self.viewer.line_item)
+                x_offset, y_offset = get_centered_offset(masked_pixmap, max_width, max_height)
+                painter.drawPixmap(x_offset, y_offset, masked_pixmap)
+            elif overlay_A:
+                # Compare overlay_A to live view
                 masked_pixmap = self.apply_line_mask(base_pixmap, overlay_A, base_pixmap, self.viewer.line_item)
                 x_offset, y_offset = get_centered_offset(masked_pixmap, max_width, max_height)
                 painter.drawPixmap(x_offset, y_offset, masked_pixmap)
-            if overlay_B:
+            elif overlay_B:
+                # Compare overlay_B to live view
                 masked_pixmap = self.apply_line_mask(base_pixmap, base_pixmap, overlay_B, self.viewer.line_item)
                 x_offset, y_offset = get_centered_offset(masked_pixmap, max_width, max_height)
                 painter.drawPixmap(x_offset, y_offset, masked_pixmap)
-            
+                    
         else:
             self.viewer.line_item.setVisible(False)
             self.viewer.rect_item.setVisible(False)
@@ -1039,7 +1059,7 @@ class MainWindow(QMainWindow):
             return
 
         # Scale the pixmap to fit within a 200x200 bounding box while maintaining aspect ratio
-        scaled_pixmap = pixmap.scaled(QSize(200, 200), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        scaled_pixmap = pixmap.scaled(QSize(130, 130), Qt.KeepAspectRatio, Qt.SmoothTransformation)
 
         image_label = SnapshotThumbs(pixmap, self)
         image_label.setPixmap(scaled_pixmap)

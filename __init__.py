@@ -90,7 +90,9 @@ def check_resolution_wrapper():
     global firstRun
     if status == "extui_running":
         if firstRun: bpy.app.timers.register(run_align_camera_operator, first_interval=1)
-        #BlenderMonitor.check_resolution()
+        # Send Scene resolution to external ui
+        print("[BRV] Sending resolution to external ui")
+        check_and_send_resolution()
         if status == "extui_exited":
             bpy.app.timers.register(closeRenderWindow, first_interval=1)
             firstRun = True
@@ -99,7 +101,7 @@ def check_resolution_wrapper():
 class SocketServer:
 
     HOST = '127.0.0.1'
-    PORT = 42069
+    PORT = 42082
     listener_thread = None
     server_socket = None
     stop_event = threading.Event()
@@ -109,7 +111,7 @@ class SocketServer:
     @classmethod
     def start(cls, host=HOST, port=PORT):
         if cls.is_port_in_use(host, port):
-            print(f"[brv] Error port {port} already in use")
+            print(f"[BRV] Error port {port} already in use")
         else:
             cls.stop_event.clear()
             cls.listener_thread = threading.Thread(target=cls.listen_for_commands, args=(host, port))
@@ -180,10 +182,11 @@ class SocketServer:
             bpy.app.timers.register(run_render_region_operator, first_interval=0.5)
     @classmethod
     def update_local_status(cls, new_status):
-        global status
+        global status, firstRun
         status = new_status
         if status == 'extui_exited':
             status = "init"
+            firstRun = False
             bpy.app.timers.register(closeRenderWindow, first_interval=1)
         #print("[BRV] Status Updated Locally: " + str(status))
 
@@ -192,7 +195,7 @@ class SocketServer:
         global status
         status = new_status
         cls.notify_clients_status()
-        #print("[BRV] Status Updated: " + str(status))
+        print("[BRV] Status Updated: " + str(status))
 
     @classmethod
     def notify_clients_status(cls):
@@ -227,14 +230,28 @@ class SocketServer:
     def stop(cls):
         try:
             cls.stop_event.set()
-            if cls.listener_thread.is_alive():
-                cls.listener_thread.join()
+
+            if cls.server_socket:
+                try:
+                    cls.sel.unregister(cls.server_socket)
+                except Exception:
+                    pass
+                cls.server_socket.close()
+                cls.server_socket = None
+
             for conn in list(cls.clients):
                 cls.disconnect(conn)
-            if cls.server_socket:
-                cls.server_socket.close()
+
+            # Close and clear selector
+            cls.sel.close()
+            cls.sel = selectors.DefaultSelector()
+
+            if cls.listener_thread and cls.listener_thread.is_alive():
+                cls.listener_thread.join(timeout=2)
+                cls.listener_thread = None
+
         except Exception as e:
-            print(f"[BRV] Can't stop socket server error, please restart blender. {e}")
+            print(f"[BRV] Can't stop socket server properly: {e}")  
 
 class CreateCleanRenderedViewOperator(Operator):
     bl_idname = "brw.create_clean_rendered_view"
@@ -257,9 +274,7 @@ class CreateCleanRenderedViewOperator(Operator):
                 print("[BRV] Failed to load / connect to external ui..")
                 return('FINISHED')
             break
-        # Send Scene resolution to external ui
-        check_and_send_resolution()
-
+        
         # Step 1: Create a new main window
         bpy.ops.wm.window_new_main()
 
@@ -288,11 +303,13 @@ class CreateCleanRenderedViewOperator(Operator):
 
         render.Window = new_window
 
-        bpy.context.scene.camera.data.show_passepartout = False
-        bpy.context.scene.camera.data.passepartout_alpha = 0
+        # bpy.context.scene.camera.data.show_passepartout = False
+        # bpy.context.scene.camera.data.passepartout_alpha = 0
         resX = bpy.context.scene.render.resolution_x
         resY = bpy.context.scene.render.resolution_y
         resP = bpy.context.scene.render.resolution_percentage
+
+
         SocketServer.update_status('viewport_created')
 
         return {'FINISHED'}
@@ -316,29 +333,25 @@ def check_and_send_resolution():
     current_res_x = bpy.context.scene.render.resolution_x
     current_res_y = bpy.context.scene.render.resolution_y
     current_res_p = bpy.context.scene.render.resolution_percentage
-    if current_res_x != resX or current_res_y != resY or current_res_p != resP:
-        resX = current_res_x
-        resY = current_res_y
-        resP = current_res_p
-        resolution_data = {
-            "resolution_x": resX,
-            "resolution_y": resY,
-            "resolution_percentage": resP
-        } 
-        SocketServer.notify_clients_data(resolution_data)
+
+    resX = current_res_x
+    resY = current_res_y
+    resP = current_res_p
+    resolution_data = {
+        "resolution_x": resX,
+        "resolution_y": resY,
+        "resolution_percentage": resP
+    } 
+    SocketServer.notify_clients_data(resolution_data)
     res_updating = False
 
 res_updating = False
 def desgraph_post_handler(scene, depsgraph):
     global res_updating, status
-
-    if not res_updating:
-        res_updating = True
-        print("checking res")
-        bpy.app.timers.register(check_and_send_resolution, first_interval=1)
+    bpy.app.timers.register(check_and_send_resolution, first_interval=1)
 
 def register():
-
+    bpy.types.TOPBAR_MT_render.append(draw_ipr_button)
     bpy.app.handlers.load_post.append(load_pre_handler)
     bpy.app.handlers.depsgraph_update_post.append(desgraph_post_handler)
     #bpy.app.timers.register(check_resolution_wrapper)
@@ -360,6 +373,7 @@ def register():
     #BlenderMonitor.start()
 
 def unregister():
+    bpy.types.TOPBAR_MT_render.remove(draw_ipr_button)
     SocketServer.stop()
     bpy.app.handlers.load_post.remove(load_pre_handler)
     bpy.app.handlers.depsgraph_update_post.remove(desgraph_post_handler)
@@ -383,25 +397,23 @@ def unregister():
     except:
         print("[BRV] No active external Ui. Exiting.")
 
-def run_compiled_script():
-    global extUiProc
-    # Define the path to the compiled executabl
-    executable_path = os.path.join(script_dir,"dist/RenderWindow_ui.exe")  
-    extUiProc = Popen([executable_path])
+def draw_ipr_button(self, context):
+    layout = self.layout
+    layout.operator("brw.create_clean_rendered_view", text="Render View (IPR)")
 
 def start_external_script():
     
     global extUiProc
     
-    executable_path = os.path.join(script_dir," RenderView_ui.exe")  
-    extUiProc = Popen([executable_path])
+    # executable_path = os.path.join(script_dir,"RenderView_ui.exe")  
+    # extUiProc = Popen([executable_path])
     
 
     # For active developement only
     # Using local python, I was unable to make it work using blender's python and installing module pyside6, pyautogui, pygetwindow, pywin32
     # Moreoever blender extension guidelines seems to not accept any pip install
-    # filepath = os.path.join(script_dir,"RenderView_ui.py")
-    # extUiProc = Popen(['python', filepath])
+    filepath = os.path.join(script_dir,"RenderView_ui.py")
+    extUiProc = Popen(['python', filepath])
 
 
 
