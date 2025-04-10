@@ -19,7 +19,7 @@ wheels = [
     "./wheels/pywin32-306-cp311-cp311-win_amd64.whl",
     "./wheels/pillow-11.1.0-cp311-cp311-win_amd64.whl",
     "./wheels/pygetwindow-0.0.9-py3-none-any.whl",
-    "./wheels/pymsgbox-1.0.9-py3-none-any",
+    "./wheels/pymsgbox-1.0.9-py3-none-any.whl",
     "./wheels/pyrect-0.2.0-py2.py3-none-any.whl",
     "./wheels/pyscreeze-0.1.30-py3-none-any.whl",
 ]
