@@ -7,6 +7,7 @@ bl_info = {
 }
 
 import json
+import subprocess
 import selectors
 import socket
 from subprocess import Popen
@@ -405,19 +406,18 @@ def start_external_script():
     
     global extUiProc
     
-    # executable_path = os.path.join(script_dir,"RenderView_ui.exe")  
-    # extUiProc = Popen([executable_path])
+    # Compiled version
+    executable_path = os.path.join(script_dir,"RenderView_ui.exe")  
+    extUiProc = Popen([executable_path])
     
+    # For active developement this is not running on blender's python 
+    # I did not find a way to run external process to capture blender's window from within blender.
+    # Need to install python and dependencies :
+    # pip install PySide6 pyautogui pygetwindow pywin32
 
-    # For active developement only
-    # Using local python, I was unable to make it work using blender's python and installing module pyside6, pyautogui, pygetwindow, pywin32
-    # Moreoever blender extension guidelines seems to not accept any pip install
-    filepath = os.path.join(script_dir,"RenderView_ui.py")
-    extUiProc = Popen(['python', filepath])
-
+    # filepath = os.path.join(script_dir,"RenderView_ui.py")
+    # extUiProc = Popen(['python', filepath])
 
 
 if __name__ == "__main__":
     register()
-
-    
