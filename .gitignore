@@ -1,5 +1,2 @@
 .vscode
-build
-dist
 __pycache__
-RenderView_ui.spec
