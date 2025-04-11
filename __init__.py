@@ -1,16 +1,18 @@
 bl_info = {
     "name": "[BRV] Blender Render View",
     "blender": (4, 2, 0),
-    "version": (0, 1, 0),
+    "version": (0, 2, 0),
     "category": "Interface",
     "author": "Eisteed"
 }
 
 import json
+import multiprocessing
 import subprocess
 import selectors
 import socket
 from subprocess import Popen
+import sys
 import threading
 import os
 import time
@@ -19,6 +21,8 @@ import bpy # type: ignore
 from bpy.props import StringProperty, PointerProperty # type: ignore
 from bpy.types import AddonPreferences, Operator # type: ignore
 from bpy.app.handlers import persistent # type: ignore
+
+
 
 PORT = 42069
 
@@ -352,6 +356,7 @@ def desgraph_post_handler(scene, depsgraph):
     bpy.app.timers.register(check_and_send_resolution, first_interval=1)
 
 def register():
+
     bpy.types.TOPBAR_MT_render.append(draw_ipr_button)
     bpy.app.handlers.load_post.append(load_pre_handler)
     bpy.app.handlers.depsgraph_update_post.append(desgraph_post_handler)
@@ -369,9 +374,8 @@ def register():
         kmi = km.keymap_items.new(CreateCleanRenderedViewOperator.bl_idname, 'R', 'PRESS', ctrl=True, alt=True)
         addon_keymaps.append((km, kmi))
 
+    import importlib
     SocketServer.start()
-
-    #BlenderMonitor.start()
 
 def unregister():
     bpy.types.TOPBAR_MT_render.remove(draw_ipr_button)
@@ -403,21 +407,30 @@ def draw_ipr_button(self, context):
     layout.operator("brw.create_clean_rendered_view", text="Render View (IPR)")
 
 def start_external_script():
-    
     global extUiProc
-    
-    # Compiled version
-    executable_path = os.path.join(script_dir,"RenderView_ui.exe")  
-    extUiProc = Popen([executable_path])
-    
-    # For active developement this is not running on blender's python 
-    # I did not find a way to run external process to capture blender's window from within blender.
-    # Need to install python and dependencies :
-    # pip install PySide6 pyautogui pygetwindow pywin32
+    site_packages_dir = None
 
-    # filepath = os.path.join(script_dir,"RenderView_ui.py")
-    # extUiProc = Popen(['python', filepath])
+    for path in sys.path:
+        if path.endswith(r'extensions\.local\lib\python3.11\site-packages'):
+            site_packages_dir = path
+            addon_dir = os.path.dirname(__file__)
+            run_script = os.path.join(addon_dir, "RenderView_ui.py")
+            #print(run_script)
+            #print(blender_python)
+            #print(site_packages_dir)
+            #print(blender_exe, run_script, site_packages_dir, blender_exe)
+            print(f"[BRV] Starting external UI..")
 
+            blender_exe = bpy.app.binary_path
+            flags = ['--background', '--factory-startup', '--quiet', '--python']
+
+            extUiProc = Popen([blender_exe] + flags + [run_script])
+            break
+
+    if not site_packages_dir:
+        print(f"Could not find site-packages directory in sys.path")
+        print(f"Cannot start Blender Render View without it's dependencies.")
+    
 
 if __name__ == "__main__":
     register()

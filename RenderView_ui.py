@@ -1,17 +1,102 @@
-import atexit
 import os
+import sys
+import ctypes
+
+def find_site_packages_path():
+    for path in sys.path:
+        if path and "site-packages" in path.replace("\\", "/").lower():
+            if os.path.isdir(path):
+                return path
+    return None
+
+site_packages_dir = find_site_packages_path()
+if site_packages_dir:
+    sys.path.append(site_packages_dir)
+    #print("✅ Found site-packages at:", site_packages_dir)
+else:
+    print("❌ Could not find site-packages in sys.path")
+    sys.exit()
+
+def loadWin32():
+    import importlib
+    # Dictionary to store loaded modules
+    loaded_modules = {}
+    
+    if not site_packages_dir:
+        print("Could not find site-packages directory in sys.path")
+    
+    # Define the pywin32_system32 directory
+    pywin32_system32 = os.path.join(site_packages_dir, "pywin32_system32")
+    
+    # Add the pywin32_system32 directory to PATH for DLL loading
+    if os.path.exists(pywin32_system32):
+        os.environ["PATH"] = pywin32_system32 + os.pathsep + os.environ["PATH"]
+        #print(f"Added to PATH: {pywin32_system32}")
+    
+    # Ensure all necessary directories are in sys.path
+    win32_dirs = [
+        os.path.join(site_packages_dir, "win32"),
+        os.path.join(site_packages_dir, "win32", "lib"),
+        os.path.join(site_packages_dir, "pythonwin"),
+        pywin32_system32
+    ]
+    
+    for path in win32_dirs:
+        if os.path.exists(path) and path not in sys.path:
+            sys.path.insert(0, path)
+            #print(f"Added to sys.path: {path}")
+    
+    # Load pywintypes DLL first (important for dependencies)
+    pywintypes_dll = os.path.join(pywin32_system32, "pywintypes311.dll")
+    if os.path.exists(pywintypes_dll):
+        try:
+            ctypes.CDLL(pywintypes_dll)
+            #print(f"Loaded DLL: {pywintypes_dll}")
+        except Exception as e:
+            print(f"Error loading {pywintypes_dll}: {e}")
+    #print(f"Starting win32 modules import")
+    # Try importing modules in a specific order
+    modules_to_load = ["pywintypes", "win32con", "win32gui", "win32process", "win32ui"]
+    
+    for module_name in modules_to_load:
+        try:
+            module = importlib.import_module(module_name)
+            loaded_modules[module_name] = module
+            #print(f"✅ Successfully imported {module_name}")
+        except ImportError as e:
+            print(f"❌ Failed to import {module_name}: {e}")
+            
+            # Special handling for modules that might need extra attention
+            if module_name == "win32ui":
+                win32ui_pyd = os.path.join(site_packages_dir, "pywin32_system32", "win32ui.pyd")
+                if os.path.exists(win32ui_pyd):
+                    try:
+                        import importlib.machinery
+                        import importlib.util
+                        
+                        loader = importlib.machinery.ExtensionFileLoader("win32ui", win32ui_pyd)
+                        spec = importlib.machinery.ModuleSpec(name="win32ui", loader=loader, origin=win32ui_pyd)
+                        win32ui = importlib.util.module_from_spec(spec)
+                        sys.modules["win32ui"] = win32ui
+                        loader.exec_module(win32ui)
+                        loaded_modules["win32ui"] = win32ui
+                        print("✅ Successfully loaded win32ui via ExtensionFileLoader")
+                    except Exception as e2:
+                        print(f"Failed to load win32ui via ExtensionFileLoader: {e2}")
+loadWin32()
+
+import atexit
+import threading
+import socket
+import time
+import json
 import PySide6
 from PySide6.QtWidgets import QApplication, QGraphicsItem, QGraphicsLineItem, QGraphicsRectItem, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QVBoxLayout, QHBoxLayout, QPushButton, QWidget, QFileDialog, QMainWindow, QScrollArea, QLabel, QMenuBar, QMenu
 from PySide6.QtGui import QAction, QPainter, QPainterPath, QPen, QPixmap, QImage, QColor, QPalette, QIcon, QPolygonF, QWheelEvent
 from PySide6.QtCore import QEvent, QObject, QPointF, Qt, QThread, Signal, QRectF, QSize,  QTimer
 import pygetwindow as gw
-import threading
+
 import win32con, win32gui, win32ui, win32process
-import ctypes
-import socket
-import time
-import json
-import sys
 import pywintypes
 
 HOST = '127.0.0.1' 
@@ -60,13 +145,12 @@ class BlenderWindowMonitor:
     @classmethod
     def find_new_blender_window(cls):
         global status
-        print(f"[BlenderRenderView] Waiting for viewport window...")
+        print(f"[BRV-UI] Waiting for viewport window...")
         SocketClient.update_status('extui_waiting')
         existingWindow = cls.find_blender_windows()
         while True:
-            print(f"Status: " + status)
             if status == "viewport_created":
-                print(f"[BlenderRenderView] Viewport found ! Loading..")
+                print(f"[BRV-UI] Viewport found ! Loading..")
                 current_windows = cls.find_blender_windows()
                 # Find the window that is not in existing_windows
                 new_window = [window for window in current_windows if window not in existingWindow]
@@ -74,6 +158,7 @@ class BlenderWindowMonitor:
                     Blender.window =  new_window[0]
                     Blender.windowHandle = Blender.window._hWnd
                     break
+            time.sleep(1)
         cls.resize_window_to_resolution()
         SocketClient.update_status("extui_running")
         
@@ -107,7 +192,7 @@ class BlenderWindowMonitor:
         resy = int(Blender.resolution_y * (Blender.resolution_percentage / 100))
         win32gui.SetWindowPos(hwnd, win32con.HWND_TOP, 0, 0, int(resx), int(resy), win32con.SWP_NOMOVE | win32con.SWP_NOZORDER | win32con.SWP_FRAMECHANGED)
         SocketClient.send_message({"resized":"true"})
-        print(f"[BlenderRenderView] Blender viewport resized to {resx} x {resy} ({Blender.resolution_x} x {Blender.resolution_y} @ {Blender.resolution_percentage}%)")
+        #print(f"[BRV-UI] Blender viewport resized to {resx} x {resy} ({Blender.resolution_x} x {Blender.resolution_y} @ {Blender.resolution_percentage}%)")
         cls.move_window_offscreen()
         #win32gui.ShowWindow(hwnd, win32con.SW_HIDE)
     
@@ -182,7 +267,7 @@ class SocketClient:
         with status_lock:
             global status
             status = new_status
-            #print(f"[BlenderRenderView] Updated status from blender:", status)
+            #print(f"[BRV-UI] Updated status from blender:", status)
 
     @classmethod
     def update_status(cls, new_status):
@@ -190,7 +275,7 @@ class SocketClient:
             global status
             status = new_status
             cls.send_message({"status": status})
-            #print(f"[BlenderRenderView] Updated status from External Ui:", status)
+            #print(f"[BRV-UI] Updated status from External Ui:", status)
 
     @classmethod
     def send_message(cls, data):
@@ -205,7 +290,7 @@ class SocketClient:
             if cls.client_socket:
                 cls.client_socket.close()
         except Exception as e:
-           print(f"[BlenderRenderView] [BRV] Can't stop socket client error: {e}")
+           print(f"[BRV-UI] [BRV] Can't stop socket client error: {e}")
 
 ################################
 ### Blender viewport capture ###
@@ -232,7 +317,7 @@ class ScreenshotThread(QThread):
                 if pixmap:
                     self.imageCaptured.emit(pixmap)
             except Exception as e:
-                print(f"[BlenderRenderView] Fail to find blender window (closed). Exiting External UI.")
+                print(f"[BRV-UI] Fail to find blender window (closed). Exiting External UI.")
                 signal_emitter.exit_signal.emit()
                 break
 
@@ -292,7 +377,7 @@ class ScreenshotThread(QThread):
         global WIN_HANDLES
         hwnd = Blender.windowHandle
         if hwnd == 0:
-            print(f"[BlenderRenderView] Window '{window_handle}' not found!")
+            print(f"[BRV-UI] Window '{window_handle}' not found!")
             return None
 
         # whole window or just the client area.
@@ -321,7 +406,7 @@ class ScreenshotThread(QThread):
             #result = ctypes.windll.user32.PrintWindow(hwnd, saveDC.GetSafeHdc(), 1)
             result = ctypes.windll.user32.PrintWindow(hwnd, saveDC.GetSafeHdc(), 0)
             if result != 1:
-                print(f"[BlenderRenderView] Failed to capture the window!")
+                print(f"[BRV-UI] Failed to capture the window!")
                 return None
 
             bmpinfo = saveBitMap.GetInfo()
@@ -330,7 +415,7 @@ class ScreenshotThread(QThread):
             image = QImage(bmpstr, bmpinfo['bmWidth'], bmpinfo['bmHeight'], QImage.Format_ARGB32)
             pixmap = QPixmap.fromImage(image)
         except Exception as e:
-            print(f"[BlenderRenderView] Error occurred: {e}")
+            print(f"[BRV-UI] Error occurred: {e}")
             return None
         finally:
             if hwndDC:
@@ -906,12 +991,12 @@ class MainWindow(QMainWindow):
     def unsetOverlayA(self):
         self.overlay_A = None
         self.current_a_thumb = None
-        print("removed overlay A")
+        #print("removed overlay A")
 
     def unsetOverlayB(self):
         self.overlay_B = None
         self.current_b_thumb = None
-        print("removed overlay B")
+        #print("removed overlay B")
 
     def apply_line_mask(self, base_pixmap, overlay_A, overlay_B, mask_line):
         if base_pixmap is None:
@@ -1055,7 +1140,7 @@ class MainWindow(QMainWindow):
 
     def add_image(self, pixmap):
         if pixmap.isNull():
-            print(f"[BlenderRenderView] No image to add")
+            print(f"[BRV-UI] No image to add")
             return
 
         # Scale the pixmap to fit within a 200x200 bounding box while maintaining aspect ratio
@@ -1171,6 +1256,8 @@ def on_exit():
     SocketClient.update_status('extui_exited')
     SocketClient.stop()
 
+
+
 if __name__ == "__main__":
     SocketClient.start()
 
@@ -1202,6 +1289,6 @@ if __name__ == "__main__":
 
     # Connect the exit signal to the application's quit method
     signal_emitter.exit_signal.connect(app.quit)
-
+  
     atexit.register(on_exit)
     sys.exit(app.exec())

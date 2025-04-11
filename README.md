@@ -1,9 +1,8 @@
 Blender Render View.
-(This is beta an may be unstable.)
+(This is a beta an may be unstable, do not use in production.)
 
-External render window similar to classic IPR (redshift, vray, arnol).
+External render window similar to classic IPR (maya, 3dsmax, C4D ..).
 This open an external UI and stream a rendered viewport matching the render resolution.
-
 Open Render view in render drop down or with default shortcut: CTRL ALT R
 
 Currently working features :
