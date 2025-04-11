@@ -2,7 +2,7 @@ schema_version = "1.0.0"
 
 id = "brv_blender_render_view"    
 name = "[BRV] Blender Render View"
-version = "0.1.0"
+version = "0.2.0"
 maintainer = "Eisteed <hello@eisteed.com>"
 tagline  = "External render view working as a classic IPR"
 type = "add-on"
