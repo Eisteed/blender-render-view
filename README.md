@@ -33,7 +33,9 @@ https://github.com/Eisteed/blender-render-view/releases/
 
 4. Wait a bit for it to install, restart blender.
 
-5. Enjoy it for a few minutes then send me a pull request for a bug/crash you found :)
+5. Open Render view from render -> Render View (IPR) or with CTRL-ALT-R 
+
+6. Enjoy it for a few minutes then send me a pull request for a bug/crash you found :)
 
 <h3>Todos:</h3>
 
