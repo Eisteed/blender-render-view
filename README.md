@@ -5,6 +5,14 @@ External render window similar to classic IPR (maya, 3dsmax, C4D ..).
 This open an external UI and stream a rendered viewport matching the render resolution.
 Open Render view in render drop down or with default shortcut: CTRL ALT R
 
+**HOW TO USE**:
+1. Download code as zip or download release here :
+https://github.com/Eisteed/blender-render-view/releases/
+2. Open blender -> Edit -> Preferences -> Get Extensions -> top right down arrow -> Install from disk
+3. Select downloaded zip file
+4. Wait a bit for it to install, restart blender.
+5. Enjoy it for a few minutes then send me a pull request for a bug/crash you found :)
+   
 Currently working features :
 - Save current render to png
 - Add Snapshot (unlimited)
