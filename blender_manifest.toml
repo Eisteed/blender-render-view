@@ -4,6 +4,7 @@ id = "brv_blender_render_view"
 name = "[BRV] Blender Render View"
 version = "0.2.0"
 maintainer = "Eisteed <hello@eisteed.com>"
+website = "https://github.com/Eisteed/blender-render-view"
 tagline  = "External render view working as a classic IPR"
 type = "add-on"
 
@@ -22,3 +23,6 @@ wheels = [
     "./wheels/PyGetWindow-0.0.9-py3-none-any.whl",
     "./wheels/PyRect-0.2.0-py2.py3-none-any.whl"
 ]
+
+[permissions]
+files = "Export PNG to disk"
