@@ -5,6 +5,8 @@ External render window similar to classic IPR (maya, 3dsmax, C4D ..).
 This open an external UI and stream a rendered viewport matching the render resolution.
 Open Render view in render drop down or with default shortcut: CTRL ALT R
 
+Demo Here :
+https://www.youtube.com/watch?v=g3SEom4mJ3s
    
 <h2>Currently working features :</h2>
 
