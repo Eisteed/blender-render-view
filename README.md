@@ -26,7 +26,6 @@ https://www.youtube.com/watch?v=g3SEom4mJ3s
 
 <h2>How to use:</h2>
 
-=======
 <h3>Automatic install (auto update):</h3>
 Go to https://eisteed.com/blender/
 Drag & drop brv_blender_render_view to install !

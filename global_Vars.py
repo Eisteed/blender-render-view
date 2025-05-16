@@ -1,8 +1,8 @@
 monitor         = True
 extUiProc       = None
 renderWindow    = None
-renderPass      = "AO"
-firstRun       = True
+renderPass      = "COMBINED"
+firstRun        = True
 status          = "initial"
 
 res_updating = False
