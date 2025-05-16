@@ -1,10 +1,5 @@
-bl_info = {
-    "name": "[BRV] Blender Render View",
-    "blender": (4, 2, 0),
-    "version": (0, 2, 0),
-    "category": "Interface",
-    "author": "Eisteed"
-}
+import sys
+sys.dont_write_bytecode = True
 
 import json
 import multiprocessing
@@ -12,7 +7,6 @@ import subprocess
 import selectors
 import socket
 from subprocess import Popen
-import sys
 import threading
 import os
 import time
@@ -21,92 +15,20 @@ import bpy # type: ignore
 from bpy.props import StringProperty, PointerProperty # type: ignore
 from bpy.types import AddonPreferences, Operator # type: ignore
 from bpy.app.handlers import persistent # type: ignore
+#from .functions.showMessage import msgbox
+from . import global_Vars
+from .functions import setRenderPass
 
-
-
-PORT = 42069
-
-addon_keymaps = []
-extUiLog = ""
-extUiReady = False
-extUiProc = None
-firstRun = True
-status = {'status': 'initial'}  # Global status variable
-status_lock = threading.Lock()  # Lock for thread-safe access to status
-renderWindow = None
-resX = ""
-resY = ""
-resP = ""
-xmin = 1
-ymin = 1
-xmax = 1
-ymax = 1
+# Change port number to avoid conflict with other addons,
+# Use the same inside renderview_ui/init.py if conflict with other addons
+PORT = 42082
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
-
-class render:
-    Window = None
-     
-class CenterCam(Operator):
-    
-    """Aligns the 3D View to the active camera and zooms"""
-    bl_idname = "brv.align_camera"
-    bl_label = "Align Camera and Zoom"
-    
-    def execute(self, context):
-        global firstRun
-        for window in bpy.context.window_manager.windows:
-            if window == render.Window:
-                for area in window.screen.areas:
-                    if area.type == 'VIEW_3D':
-                        region = next((region for region in area.regions if region.type == 'WINDOW'), None)
-                        if region:
-                            with bpy.context.temp_override(window=window, area=area, region=region):
-                                if bpy.ops.view3d.view_center_camera.poll():
-                                    bpy.ops.view3d.view_center_camera()
-                                if bpy.ops.view3d.zoom_camera_1_to_1.poll():
-                                    bpy.ops.view3d.zoom_camera_1_to_1()
-        return {'FINISHED'}
-    
-def run_align_camera_operator():
-    bpy.ops.brv.align_camera()
-    return None  # To stop the timer from repeating
-
-class RenderRegion(Operator):
-    global xmin, ymin, xmax, ymax
-    """Set and enable render region"""
-    bl_idname = "brv.set_render_region"
-    bl_label = "Set Renger Region"
-    
-    def execute(self, context):
-        bpy.context.scene.render.border_min_x = float(xmin)
-        bpy.context.scene.render.border_min_y = float(ymin)
-        bpy.context.scene.render.border_max_x = float(xmax)
-        bpy.context.scene.render.border_max_y = float(ymax)
-        bpy.context.scene.render.use_border = True
-        return {'FINISHED'}
-    
-def run_render_region_operator():
-    bpy.ops.brv.set_render_region()
-    return None  # To stop the timer from repeating
-
-# Wrapper function
-def check_resolution_wrapper():
-    global firstRun
-    if status == "extui_running":
-        if firstRun: bpy.app.timers.register(run_align_camera_operator, first_interval=1)
-        # Send Scene resolution to external ui
-        print("[BRV] Sending resolution to external ui")
-        check_and_send_resolution()
-        if status == "extui_exited":
-            bpy.app.timers.register(closeRenderWindow, first_interval=1)
-            firstRun = True
-    return 2.0  # Return interval for next call (in seconds)
+addon_keymaps = []
 
 class SocketServer:
-
+    global PORT
     HOST = '127.0.0.1'
-    PORT = 42082
     listener_thread = None
     server_socket = None
     stop_event = threading.Event()
@@ -116,7 +38,7 @@ class SocketServer:
     @classmethod
     def start(cls, host=HOST, port=PORT):
         if cls.is_port_in_use(host, port):
-            print(f"[BRV] Error port {port} already in use")
+           print(f"[BRV] Error port {port} already in use")
         else:
             cls.stop_event.clear()
             cls.listener_thread = threading.Thread(target=cls.listen_for_commands, args=(host, port))
@@ -141,19 +63,19 @@ class SocketServer:
         cls.server_socket.setblocking(False)
         cls.sel.register(cls.server_socket, selectors.EVENT_READ, cls.accept)
 
-        print(f"[BRV] Socket Server Started. Listening on {host}:{port}...")
+        if(global_Vars.debug):print(f"[BRV] Socket Server Started. Listening on {host}:{port}...")
         while not cls.stop_event.is_set():
             events = cls.sel.select(timeout=1)
             for key, mask in events:
                 callback = key.data
                 callback(key.fileobj, mask)
         cls.server_socket.close()
-        print(f"[BRV] Socket server stopped.")
+        if(global_Vars.debug):print(f"[BRV] Socket server stopped.")
 
     @classmethod
     def accept(cls, sock, mask):
         conn, addr = sock.accept()
-        print(f"[BRV] Connection from {addr}")
+        #if(global_Vars.debug):print(f"[BRV] Connection from {addr}")
         conn.setblocking(False)
         cls.sel.register(conn, selectors.EVENT_READ, cls.handle_client)
         cls.clients[conn] = addr
@@ -163,12 +85,19 @@ class SocketServer:
         try:
             data = conn.recv(1024)
             if data:
-                received_json = json.loads(data.decode('utf-8'))
-                cls.handle_message(received_json, conn)
+                try:
+                    received_json = json.loads(data.decode('utf-8'))
+                    cls.handle_message(received_json, conn)
+                    #if(global_Vars.debug):print(f"[BRV] Received: {received_json}")
+                except json.JSONDecodeError as e:
+                    if(global_Vars.debug):print(f"[BRV] JSONDecodeError: {e}")
+                    if(global_Vars.debug):print(f"[BRV] Raw data: {data}")
             else:
                 cls.disconnect(conn)
         except ConnectionResetError:
             cls.disconnect(conn)
+        except Exception as e:
+            print(f"[BRV] Unexpected error: {e}")
 
     @classmethod
     def handle_message(cls, message, conn):
@@ -176,41 +105,41 @@ class SocketServer:
             cls.update_local_status(message['status'])
         if 'resolution' in message:
             cls.update_resolution(message['resolution'])
-        if 'resized' in message:
-            bpy.app.timers.register(run_align_camera_operator, first_interval=0.5)
         if 'render_region' in message:
-            global xmin, ymin, xmax, ymax
-            xmin = message['xmin']
-            ymin = message['ymin']
-            xmax = message['xmax']
-            ymax = message['ymax']
-            bpy.app.timers.register(run_render_region_operator, first_interval=0.5)
+            if(message['render_region'] == "true"):
+                global_Vars.rr_enabled = True
+                global_Vars.xmin = message['xmin']
+                global_Vars.ymin = message['ymin']
+                global_Vars.xmax = message['xmax']
+                global_Vars.ymax = message['ymax']
+            else:
+                global_Vars.rr_enabled = False
+            bpy.app.timers.register(run_render_region_operator, first_interval=0.1)
+        if 'render_pass' in message:
+            global_Vars.renderPass = message['render_pass']
+            #if(global_Vars.debug):print(f"received render_pass: {message['render_pass']}")
+            setRenderPass.run(bpy.context)
     @classmethod
     def update_local_status(cls, new_status):
-        global status, firstRun
-        status = new_status
-        if status == 'extui_exited':
-            status = "init"
-            firstRun = False
+        global_Vars.status = new_status
+        if global_Vars.status == 'extui_exited':
             bpy.app.timers.register(closeRenderWindow, first_interval=1)
-        #print("[BRV] Status Updated Locally: " + str(status))
+        #if(global_Vars.debug):print("[BRV] status Received: " + str(status))
 
     @classmethod
     def update_status(cls, new_status):
-        global status
-        status = new_status
+        global_Vars.status = new_status
         cls.notify_clients_status()
-        print("[BRV] Status Updated: " + str(status))
+        #if(global_Vars.debug):print("[BRV] status Updated: " + str(status))
 
     @classmethod
     def notify_clients_status(cls):
-        global status
-        status_data = json.dumps({"status": status}).encode('utf-8')
+        status_data = json.dumps({"status": global_Vars.status}).encode('utf-8')
         for conn in list(cls.clients):
             try:
                 conn.sendall(status_data)
             except Exception as e:
-                print(f"[BRV] Error notifying client: {e}")
+                if(global_Vars.debug):print(f"[BRV] Error notifying client: {e}")
                 cls.disconnect(conn)
     
     @classmethod
@@ -222,11 +151,11 @@ class SocketServer:
             try:
                 conn.sendall(message)
             except Exception as e:
-                print(f"[BRV] Error notifying client: {e}")
+                if(global_Vars.debug):print(f"[BRV] Error notifying client: {e}")
                 cls.disconnect(conn)
     @classmethod
     def disconnect(cls, conn):
-        print(f"[BRV] Disconnecting {cls.clients[conn]}")
+        if(global_Vars.debug):print(f"[BRV] Disconnecting {cls.clients[conn]}")
         cls.sel.unregister(conn)
         conn.close()
         del cls.clients[conn]
@@ -256,181 +185,245 @@ class SocketServer:
                 cls.listener_thread = None
 
         except Exception as e:
-            print(f"[BRV] Can't stop socket server properly: {e}")  
+            if(global_Vars.debug):print(f"[BRV] Can't stop socket server properly: {e}")  
 
-class CreateCleanRenderedViewOperator(Operator):
+class OP_CenterCam(Operator):
+    
+    """Aligns the 3D View to the active camera and zooms"""
+    bl_idname = "brv.align_camera"
+    bl_label = "Align Camera and Zoom"
+    
+    def execute(self, context):
+
+        for window in bpy.context.window_manager.windows:
+            if window == global_Vars.renderWindow:
+                for area in window.screen.areas:
+                    if area.type == 'VIEW_3D':
+                        region = next((region for region in area.regions if region.type == 'WINDOW'), None)
+                        if region:
+                            with bpy.context.temp_override(window=window, area=area, region=region):
+                                if bpy.ops.view3d.view_center_camera.poll():
+                                    bpy.ops.view3d.view_center_camera()
+                                if bpy.ops.view3d.zoom_camera_1_to_1.poll():
+                                    bpy.ops.view3d.zoom_camera_1_to_1()
+        return {'FINISHED'}
+    
+class OP_RenderRegion(Operator):
+    global rr_enabled, xmin, ymin, xmax, ymax
+    """Set and enable render region"""
+    bl_idname = "brv.set_render_region"
+    bl_label = "Set Renger Region"
+
+    def execute(self, context):
+        #if(global_Vars.debug):print(f"[BRV] Set render region to :{rr_enabled}")
+        bpy.context.scene.render.border_min_x = float(xmin)
+        bpy.context.scene.render.border_min_y = float(ymin)
+        bpy.context.scene.render.border_max_x = float(xmax)
+        bpy.context.scene.render.border_max_y = float(ymax)
+        bpy.context.scene.render.use_border = rr_enabled
+        return {'FINISHED'}
+    
+def run_render_region_operator():
+    bpy.ops.brv.set_render_region()
+    return None 
+
+class OP_CreateCleanRenderedView(Operator):
     bl_idname = "brw.create_clean_rendered_view"
     bl_label = "[BRV] Blender RenderWindow"
     bl_description = "Create a new Blender instance with no UI elements and rendered viewport shading to be used with external RenderWindow UI."
 
     def execute(self, context):
-        global resX,resY,resP, status, renderWindow
+        if global_Vars.extUiProc is not None:
+            if is_process_running(global_Vars.extUiProc):
+                print(f"[BRV] External UI is already running: {global_Vars.extUiProc}")
+                return {'FINISHED'}
+
+        global_Vars.monitor = True
+        global_Vars.firstRun = True
+
+        bpy.app.timers.register(monitoring, first_interval=1)
 
         start_external_script()
-     
-        while True:
-            tries = 0
-            if status == "extui_waiting":
-                break
-            else:
-                tries = tries + 1
-            time.sleep(1)
-            if tries > 5:
-                print("[BRV] Failed to load / connect to external ui..")
-                return('FINISHED')
-            break
-        
-        # Step 1: Create a new main window
-        bpy.ops.wm.window_new_main()
+        tries = 0
+        while tries <= 5:
+            if global_Vars.status == "extui_waiting":
+                if(global_Vars.debug):print(f"[BRV] Connected to external ui..")
 
-        # Get the new window and its screen
-        new_window = bpy.context.window_manager.windows[-1]
-        renderWindow = new_window
-        new_screen = new_window.screen
+                # Step 1: Create a new main window
+                bpy.ops.wm.window_new_main()
 
-        # Step 2: Change an existing area to a 3D Viewport
-        new_area = new_screen.areas[0]  # We'll just take the first area for simplicity
-        new_area.type = 'VIEW_3D'
-        # Set the new area to use the active camera and rendered shading mode
-        for space in new_area.spaces:
-            if space.type == 'VIEW_3D':
-                space.region_3d.view_perspective = 'CAMERA'
-                space.shading.type = 'RENDERED'
-                space.overlay.show_overlays = False
-                space.show_region_header = False
-                space.show_region_toolbar = False
-                space.show_gizmo = False
+                # Get the new window and its screen
+                new_window = bpy.context.window_manager.windows[-1]
+                global_Vars.renderWindow = new_window
+                new_screen = new_window.screen
 
-                new_region = next((region for region in new_area.regions if region.type == 'WINDOW'), None)
+                # Step 2: Change an existing area to a 3D Viewport
+                new_area = new_screen.areas[0] 
+                new_area.type = 'VIEW_3D'
 
-                with bpy.context.temp_override(window=new_window, area=new_area, region=new_region):
-                    bpy.ops.screen.screen_full_area(use_hide_panels=True)
+                # Set the new area to use the active camera and rendered shading mode
+                for space in new_area.spaces:
+                    if space.type == 'VIEW_3D':
+                        space.region_3d.view_perspective = 'CAMERA'
+                        space.shading.type = 'RENDERED'
+                        space.overlay.show_overlays = False
+                        space.show_region_header = False
+                        space.show_region_toolbar = False
+                        space.show_gizmo = False
+                        new_region = next((region for region in new_area.regions if region.type == 'WINDOW'), None)
+                        with bpy.context.temp_override(window=new_window, area=new_area, region=new_region):
+                            bpy.ops.screen.screen_full_area(use_hide_panels=True)
 
-        render.Window = new_window
+                global_Vars.resX = bpy.context.scene.render.resolution_x
+                global_Vars.resY = bpy.context.scene.render.resolution_y
+                global_Vars.resP = bpy.context.scene.render.resolution_percentage
 
-        # bpy.context.scene.camera.data.show_passepartout = False
-        # bpy.context.scene.camera.data.passepartout_alpha = 0
-        resX = bpy.context.scene.render.resolution_x
-        resY = bpy.context.scene.render.resolution_y
-        resP = bpy.context.scene.render.resolution_percentage
+                SocketServer.update_status('viewport_created')
+                return {'FINISHED'}
 
-
-        SocketServer.update_status('viewport_created')
-
-        return {'FINISHED'}
-    
-def closeRenderWindow():
-    if render.Window:
-        with bpy.context.temp_override(window=render.Window):
-            print("[BRV] Blender Render View closed.")
-            bpy.ops.wm.window_close()
-            render.Window = None
-        return None
-
-load_post_done = False
-@persistent
-def load_pre_handler(idk):
-    bpy.app.timers.register(closeRenderWindow, first_interval=1)
-    
-def check_and_send_resolution():
-    global res_updating
-    global resX, resY, resP
-    current_res_x = bpy.context.scene.render.resolution_x
-    current_res_y = bpy.context.scene.render.resolution_y
-    current_res_p = bpy.context.scene.render.resolution_percentage
-
-    resX = current_res_x
-    resY = current_res_y
-    resP = current_res_p
-    resolution_data = {
-        "resolution_x": resX,
-        "resolution_y": resY,
-        "resolution_percentage": resP
-    } 
-    SocketServer.notify_clients_data(resolution_data)
-    res_updating = False
-
-res_updating = False
-def desgraph_post_handler(scene, depsgraph):
-    global res_updating, status
-    bpy.app.timers.register(check_and_send_resolution, first_interval=1)
-
-def register():
-
-    bpy.types.TOPBAR_MT_render.append(draw_ipr_button)
-    bpy.app.handlers.load_post.append(load_pre_handler)
-    bpy.app.handlers.depsgraph_update_post.append(desgraph_post_handler)
-    #bpy.app.timers.register(check_resolution_wrapper)
-    bpy.utils.register_class(CenterCam)
-    bpy.utils.register_class(RenderRegion)
-    bpy.utils.register_class(CreateCleanRenderedViewOperator)
-    # Add the hotkey
-    wm = bpy.context.window_manager
-    kc = wm.keyconfigs.addon
-    if kc:
-        km = wm.keyconfigs.addon.keymaps.new(name='3D View', space_type='VIEW_3D')
-
-    # Register hotkey for Starting render view (default: ctrl alt R)
-        kmi = km.keymap_items.new(CreateCleanRenderedViewOperator.bl_idname, 'R', 'PRESS', ctrl=True, alt=True)
-        addon_keymaps.append((km, kmi))
-
-    import importlib
-    SocketServer.start()
-
-def unregister():
-    bpy.types.TOPBAR_MT_render.remove(draw_ipr_button)
-    SocketServer.stop()
-    bpy.app.handlers.load_post.remove(load_pre_handler)
-    bpy.app.handlers.depsgraph_update_post.remove(desgraph_post_handler)
-    bpy.utils.unregister_class(CenterCam)
-    bpy.utils.unregister_class(RenderRegion)
-    bpy.utils.unregister_class(CreateCleanRenderedViewOperator)
-
-    # Remove keymap entry
-    for km, kmi in addon_keymaps:
-        try:
-            km.keymap_items.remove(kmi)
-        except ValueError:
-            pass  # Keymap item was already removed or never added
-    addon_keymaps.clear()
-
-    global extUiProc
-    try:
-        Popen.kill(extUiProc)
-        extUiProc = None
-        print("[BRV] Killing external Ui. Exiting.")
-    except:
-        print("[BRV] No active external Ui. Exiting.")
-
-def draw_ipr_button(self, context):
-    layout = self.layout
-    layout.operator("brw.create_clean_rendered_view", text="Render View (IPR)")
+            tries += 1
+            time.sleep(0.5)
+        if tries > 5:
+            if(global_Vars.debug):print(f"[BRV] Failed to load / connect to external ui..")
+            #msgbox(context, "External UI failed to start", icon='ERROR', message_type='ERROR')
+            return {'FINISHED'}
 
 def start_external_script():
-    global extUiProc
     site_packages_dir = None
 
     for path in sys.path:
         if path.endswith(r'extensions\.local\lib\python3.11\site-packages'):
             site_packages_dir = path
-            addon_dir = os.path.dirname(__file__)
-            run_script = os.path.join(addon_dir, "RenderView_ui.py")
-            #print(run_script)
-            #print(blender_python)
-            #print(site_packages_dir)
-            #print(blender_exe, run_script, site_packages_dir, blender_exe)
-            print(f"[BRV] Starting external UI..")
-
-            blender_exe = bpy.app.binary_path
-            flags = ['--background', '--factory-startup', '--quiet', '--python']
-
-            extUiProc = Popen([blender_exe] + flags + [run_script])
-            break
+            break 
 
     if not site_packages_dir:
-        print(f"Could not find site-packages directory in sys.path")
-        print(f"Cannot start Blender Render View without it's dependencies.")
+        if(global_Vars.debug):print(f"[BRV] Could not find site-packages directory in sys.path")
+        if(global_Vars.debug):print(f"[BRV] Cannot start Blender Render View without it's dependencies.")
+        return False
+
+    addon_dir = os.path.dirname(__file__)
+    run_script = os.path.join(addon_dir, "renderview_ui\\__init__.py")
+    blender_exe = bpy.app.binary_path
+    print(f"[BRV] Starting external UI..")
+    flags = ['--background', '--factory-startup', '--quiet', '--python']
+    global_Vars.extUiProc = Popen([blender_exe] + flags + [run_script])
+    return True
+
+def is_process_running(process):
+    if process.poll() is None:
+        return True 
+    else:
+        return False 
+
+def closeRenderWindow():
+    if global_Vars.renderWindow:
+        try:
+            with bpy.context.temp_override(window=global_Vars.renderWindow):
+                if(global_Vars.debug):print("[BRV] Blender Rendered viewport closed.")
+                bpy.ops.wm.window_close()
+        except Exception as e:
+            if(global_Vars.debug):print(f"[BRV] Blender Rendered viewport close failed: {str(e)}")
+    global_Vars.renderWindow = None        
+    status = "init"
+    global_Vars.monitor = False
+    global_Vars.extUiProc = None
+
+def monitoring():
+    if (global_Vars.monitor):
+        if global_Vars.status == "extui_running":
+            if (global_Vars.firstRun):
+                resolution_data = {
+                    "resolution_x": bpy.context.scene.render.resolution_x,
+                    "resolution_y": bpy.context.scene.render.resolution_y,
+                    "resolution_percentage": bpy.context.scene.render.resolution_percentage,
+                    "first_run" : "true"
+                }
+                SocketServer.notify_clients_data(resolution_data)
+                global_Vars.firstRun = False
+            else:
+                bpy.ops.brv.align_camera()
+                if (not global_Vars.res_updating):
+                    check_and_send_resolution()
+        if global_Vars.status == "extui_exited":
+            bpy.app.timers.register(closeRenderWindow, first_interval=0.1)
+            return None
+        return 1.0
+    else:
+        if(global_Vars.debug):print(f"[BRV] Monitoring stopped")
+        return None
     
+@persistent
+def load_pre_handler(idk):
+    bpy.app.timers.register(closeRenderWindow, first_interval=0.1)
+    
+def check_and_send_resolution():
+
+    current_res_x = bpy.context.scene.render.resolution_x
+    current_res_y = bpy.context.scene.render.resolution_y
+    current_res_p = bpy.context.scene.render.resolution_percentage
+    if (global_Vars.resX != current_res_x) or (global_Vars.resY != current_res_y) or (global_Vars.resX != current_res_x):
+        global_Vars.resX = current_res_x
+        global_Vars.resY = current_res_y
+        global_Vars.resP = current_res_p
+        if(global_Vars.debug):print(f"[BRV] Res Changed to : {global_Vars.resX}x{global_Vars.resY}@{global_Vars.resP}")
+        resolution_data = {
+            "resolution_x": global_Vars.resX,
+            "resolution_y": global_Vars.resY,
+            "resolution_percentage": global_Vars.resP
+        } 
+        SocketServer.notify_clients_data(resolution_data)
+
+    global_Vars.res_updating = False
+
+def register():
+    bpy.types.TOPBAR_MT_render.prepend(draw_ipr_button)
+    bpy.app.handlers.load_post.append(load_pre_handler)
+
+    bpy.utils.register_class(OP_CenterCam)
+    bpy.utils.register_class(OP_RenderRegion)
+    bpy.utils.register_class(OP_CreateCleanRenderedView)
+
+    # Add the hotkey
+    wm = bpy.context.window_manager
+    kc = wm.keyconfigs.addon
+    if kc:
+        km = wm.keyconfigs.addon.keymaps.new(name='GLOBAL', space_type='VIEW_3D')
+
+        # Register hotkey for Starting render view (default: ctrl alt R)
+        kmi1 = km.keymap_items.new(OP_CreateCleanRenderedView.bl_idname, 'R', 'PRESS', ctrl=True, alt=True)
+        addon_keymaps.append((km, kmi1))
+
+    import importlib
+    SocketServer.start()
+
+def unregister():
+    global_Vars.monitor = False
+    SocketServer.stop()
+    
+    bpy.types.TOPBAR_MT_render.remove(draw_ipr_button)
+    bpy.app.handlers.load_post.remove(load_pre_handler)
+
+    bpy.utils.unregister_class(OP_CenterCam)
+    bpy.utils.unregister_class(OP_RenderRegion)
+    bpy.utils.unregister_class(OP_CreateCleanRenderedView)
+
+    for km, kmi in addon_keymaps:
+        try:
+            km.keymap_items.remove(kmi)
+        except ValueError:
+            pass
+    addon_keymaps.clear()
+
+    try:
+        Popen.kill(global_Vars.extUiProc)
+        if(global_Vars.debug):print("[BRV] Killing external Ui. Exiting.")
+    except:
+        if(global_Vars.debug):print("[BRV] No active external Ui Found. Exiting.")
+    global_Vars.extUiProc = None
+
+def draw_ipr_button(self, context):
+    layout = self.layout
+    layout.operator("brw.create_clean_rendered_view", text="Render View (IPR)", icon='IMAGE_DATA')
 
 if __name__ == "__main__":
     register()
