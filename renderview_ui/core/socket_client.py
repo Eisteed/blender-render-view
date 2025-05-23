@@ -3,14 +3,14 @@ from blender import data
 
 class SocketClient:
     HOST = '127.0.0.1'
-    PORT = 42082
     client_socket = None
     listener_thread = None
     status = {'status': 'initial'}
     status_lock = threading.Lock()
 
+
     @classmethod
-    def start(cls, host=HOST, port=PORT):
+    def start(cls, host=HOST, port=42082):
         cls.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         cls.client_socket.connect((host, port))
         cls.listener_thread = threading.Thread(target=cls.listen_for_updates)
@@ -37,7 +37,7 @@ class SocketClient:
     def handle_message(cls, message):
         if 'status' in message:
             cls.update_local_status(message['status'])
-            #if( data.Blender.debug): print(f"[BRV-UI] Status received: {cls.status}")
+            print(f"[BRV-UI] Status received: {message['status']}")
         if 'resolution_x' in message:
             data.Blender.resolution_x = message['resolution_x']
             data.Blender.resolution_y = message['resolution_y']
@@ -66,6 +66,7 @@ class SocketClient:
 
     @classmethod
     def send_message(cls, data):
+       
         try:
             message_data = json.dumps(data).encode('utf-8')
             cls.client_socket.sendall(message_data)

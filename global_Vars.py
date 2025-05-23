@@ -1,3 +1,5 @@
+PORT            = 42082
+
 monitor         = True
 extUiProc       = None
 renderWindow    = None

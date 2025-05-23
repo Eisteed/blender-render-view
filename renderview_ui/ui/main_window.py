@@ -74,6 +74,10 @@ class MainWindow(QMainWindow):
 
         self.lastHeight = 0
         self.lastWidth = 0
+
+        self.clayOverrideEnabled = False
+        self.wireframeOverrideEnabled = False
+
         # Install the event filter on the main window
         self.key_press_filter = KeyPressFilter(self)
         QApplication.instance().installEventFilter(self.key_press_filter)
@@ -159,6 +163,8 @@ class MainWindow(QMainWindow):
             (os.path.join(script_dir, 'ui/icons/snapshot.png'), self.snapshot, "Take a snapshot"),
             (os.path.join(script_dir, 'ui/icons/copy.png'), self.viewer.copyToClipboard, "Copy to clipboard"),
             (None, None, "Separator"),
+            (os.path.join(script_dir, 'ui/icons/clay.png'), self.clayOverride, "Clay"),
+            (os.path.join(script_dir, 'ui/icons/wireframe.png'), self.wireframeOverride, "Wireframe"),
         ]
 
         icon_size_px = QSize(25, 25)
@@ -184,7 +190,9 @@ class MainWindow(QMainWindow):
                 button.setNormalIcon(QIcon(normal_pixmap))
                 button.setHoverIcon(QIcon(hover_pixmap))
                 button.setIconSize(icon_size_px)  
-                button.setFixedSize(scaled_size)  
+                button.setFixedSize(scaled_size)
+                button.setProperty("normal_icon", QIcon(normal_pixmap))
+                button.setProperty("hover_icon", QIcon(hover_pixmap))  
                 button.clicked.connect(function) 
                 button.setToolTip(tooltip)
                 h_layout.addWidget(button)
@@ -478,7 +486,6 @@ class MainWindow(QMainWindow):
         self.viewer.fitInView(image_rect, Qt.KeepAspectRatio)
         self.viewer.centerOn(0,0)
 
-
     def fitToZoom(self):
         # Get the bounding rectangle of just the image item
         image_rect = self.viewer.getImage().boundingRect()
@@ -512,7 +519,6 @@ class MainWindow(QMainWindow):
                 widget.unmark()
             widget.deleteLater()
 
-
     def renderRegion(self):
         if(self.viewer.renderRegionEnabled):
             SocketClient.send_message({
@@ -542,7 +548,78 @@ class MainWindow(QMainWindow):
             self.buttons["renderRegion"].setStyleSheet("background-color: rgb(53, 53, 53);")
             self.viewer.renderRegionEnabled = False
             if self.viewer._debug_rect_item: self.viewer._debug_rect_item.setVisible(False)
+
+
+    def clayOverride(self):
+        if hasattr(self, 'clayOverrideEnabled') and self.clayOverrideEnabled:
+            # Disable clay override
+            SocketClient.send_message({"mat_override": "false"})
+            self.clayOverrideEnabled = False
+            # Reset button to normal state
+            self.buttons["clayOverride"].setStyleSheet("background-color: rgb(53, 53, 53);")
+            # Restore normal icon
+            button = self.buttons["clayOverride"]
+            normal_icon = button.property("normal_icon")
+            if normal_icon:
+                button.setIcon(normal_icon)
+        else:
+            # Enable clay override
+            SocketClient.send_message({"mat_override": "clay"})  # Changed to clay_override
+            self.clayOverrideEnabled = True
             
+            # Disable wireframe if it was enabled
+            if hasattr(self, 'wireframeOverrideEnabled') and self.wireframeOverrideEnabled:
+                self.wireframeOverrideEnabled = False
+                wireframe_button = self.buttons["wireframeOverride"]
+                wireframe_button.setStyleSheet("background-color: rgb(53, 53, 53);")
+                # Restore wireframe button normal icon
+                wireframe_normal_icon = wireframe_button.property("normal_icon")
+                if wireframe_normal_icon:
+                    wireframe_button.setIcon(wireframe_normal_icon)
+            
+            # Set button to active state
+            self.buttons["clayOverride"].setStyleSheet("background-color: rgb(6, 84, 101);")
+            # Set inverted icon
+            button = self.buttons["clayOverride"]
+            hover_icon = button.property("hover_icon")
+            if hover_icon:
+                button.setIcon(hover_icon)
+
+    def wireframeOverride(self):
+        if hasattr(self, 'wireframeOverrideEnabled') and self.wireframeOverrideEnabled:
+            # Disable wireframe override
+            SocketClient.send_message({"mat_override": "false"})
+            self.wireframeOverrideEnabled = False
+            # Reset button to normal state
+            self.buttons["wireframeOverride"].setStyleSheet("background-color: rgb(53, 53, 53);")
+            # Restore normal icon
+            button = self.buttons["wireframeOverride"]
+            normal_icon = button.property("normal_icon")
+            if normal_icon:
+                button.setIcon(normal_icon)
+        else:
+            # Enable wireframe override
+            SocketClient.send_message({"mat_override": "wireframe"})  # Changed to wireframe_override
+            self.wireframeOverrideEnabled = True
+            
+            # Disable clay if it was enabled
+            if hasattr(self, 'clayOverrideEnabled') and self.clayOverrideEnabled:
+                self.clayOverrideEnabled = False
+                clay_button = self.buttons["clayOverride"]
+                clay_button.setStyleSheet("background-color: rgb(53, 53, 53);")
+                # Restore clay button normal icon
+                clay_normal_icon = clay_button.property("normal_icon")
+                if clay_normal_icon:
+                    clay_button.setIcon(clay_normal_icon)
+            
+            # Set button to active state
+            self.buttons["wireframeOverride"].setStyleSheet("background-color: rgb(6, 84, 101);")
+            # Set inverted icon
+            button = self.buttons["wireframeOverride"]
+            hover_icon = button.property("hover_icon")
+            if hover_icon:
+                button.setIcon(hover_icon)
+                
     def closeEvent(self, event):
         self.screenshot_thread.stop()
         event.accept()

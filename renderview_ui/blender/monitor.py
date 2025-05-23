@@ -5,11 +5,11 @@ from core.socket_client import SocketClient
 import pygetwindow as gw # type: ignore
 import win32con, win32gui  # type: ignore
 from blender import data
+from core import signal
 
 class BlenderWindowMonitor:
     @classmethod
     def start(cls):
-        cls.find_new_blender_window()
         cls.monitor_thread = threading.Thread(target=cls.monitor)
         cls.monitor_thread.daemon = True
         cls.monitor_thread.start()
@@ -49,9 +49,12 @@ class BlenderWindowMonitor:
                     if(data.Blender.debug):print(f"[BRV-UI] Blender viewport window found :", {data.Blender.window._hWnd})
                     cls.resize_window_to_resolution()
                     SocketClient.update_status("extui_running")
-                    break
+                    return True
             tries += 1
-            sleep(0.5)
+            sleep(1)
+        else:
+            if(data.Blender.debug):print(f"[BRV-UI] Failed to find viewport window...")
+            return False
 
     @classmethod
     def is_window_handle_valid(cls, handle):
