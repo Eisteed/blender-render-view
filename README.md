@@ -18,9 +18,9 @@ https://www.youtube.com/watch?v=g3SEom4mJ3s
 
 - Snapshot compare to live view (set only A or B)
 
-- Zoom to fit image to window
+- Zoom to fit image to window / 1:1 ratio
 
-- Zoom to 1:1 ratio
+- AOVs dropdown
 
 - Render region (using native blender render region)
 
@@ -45,8 +45,6 @@ Drag & drop brv_blender_render_view to install !
 - File path to save snapshots (re open them after restarting blender)
 
 - Button to start / pause / reload render
-
-- AOVs dropdown
 
 - Toggle realtime / freeze tesselation
 
