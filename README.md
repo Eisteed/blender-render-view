@@ -30,7 +30,7 @@ https://www.youtube.com/watch?v=g3SEom4mJ3s
 Go to https://eisteed.com/blender/
 Drag & drop brv_blender_render_view to install !
 
-- Or -
+<h3>Manual Install:</h3>
 
 1. Download zip on previous link
    
