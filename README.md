@@ -32,15 +32,19 @@ https://www.youtube.com/watch?v=g3SEom4mJ3s
 Go to https://eisteed.com/blender/
 Drag & drop brv_blender_render_view to install !
 
-2. Open blender -> Edit -> Preferences -> Get Extensions -> top right down arrow -> Install from disk
+<h3>Manual Install:</h3>
 
-3. Select downloaded zip file
+1. Download zip on previous link
+   
+3. Open blender -> Edit -> Preferences -> Get Extensions -> top right down arrow -> Install from disk
 
-4. Wait a bit for it to install, restart blender.
+4. Select downloaded zip file
 
-5. Open Render view from render -> Render View (IPR) or with CTRL-ALT-R 
+5. Wait a bit for it to install, restart blender.
 
-6. Enjoy it for a few minutes then send me a pull request for a bug/crash you found :)
+6. Open Render view from render -> Render View (IPR) or with CTRL-ALT-R 
+
+7. Enjoy it for a few minutes then send me a pull request for a bug/crash you found :)
 
 <h3>Todos:</h3>
 
