@@ -1,4 +1,5 @@
 import json
+import os
 import socket
 import selectors
 import threading
@@ -93,7 +94,7 @@ class SocketServer:
                 global_vars.ymax = message['ymax']
             else:
                 global_vars.rr_enabled = False
-            render_region.run
+            render_region.run(bpy, global_vars.xmin, global_vars.ymin, global_vars.xmax, global_vars.ymax, global_vars.rr_enabled)
         if 'render_pass' in message:
             global_vars.renderPass = message['render_pass']
             set_render_pass.run(bpy, global_vars.renderWindow, global_vars.renderPass)
@@ -105,6 +106,72 @@ class SocketServer:
                 mat_override.wireframe(bpy)
             else:
                 mat_override.disable(bpy)
+        if 'snapshot_path' in message:
+            if(global_vars.debug):print(f"[BRV] Received snapshot_path: {message['snapshot_path']}")
+            cls.save_snapshot_path_to_blend(message['snapshot_path'])
+        if 'save_snapshots_enabled' in message:
+            if(global_vars.debug):print(f"[BRV] Received save_snapshots_enabled: {message['save_snapshots_enabled']}")
+            cls.save_snapshot_setting_to_blend(message['save_snapshots_enabled'])
+
+    @classmethod
+    def get_snapshot_folder_path(cls):
+        """Get snapshot folder path: brv-snapshots/{project_name}/ next to blend file."""
+        blend_path = bpy.data.filepath
+        if blend_path:
+            # Check if custom path is saved in scene
+            scene = bpy.context.scene
+            if "brv_snapshot_path" in scene and scene["brv_snapshot_path"]:
+                return scene["brv_snapshot_path"]
+
+            # Default: brv-snapshots/{project_name}/ next to blend file
+            project_name = os.path.splitext(os.path.basename(blend_path))[0]
+            folder_path = os.path.join(os.path.dirname(blend_path), "brv-snapshots", project_name)
+        else:
+            # Unsaved file - use temp folder
+            folder_path = os.path.join(os.path.expanduser("~"), "brv-snapshots-unsaved")
+        return folder_path
+
+    @classmethod
+    def send_snapshot_folder_to_ui(cls):
+        """Send snapshot folder path and settings to UI."""
+        folder_path = cls.get_snapshot_folder_path()
+
+        # Check if saving is enabled (default True)
+        scene = bpy.context.scene
+        save_enabled = scene.get("brv_save_snapshots", True)
+
+        if global_vars.debug:
+            print(f"[BRV] Sending snapshot folder to UI: {folder_path}, save_enabled: {save_enabled}")
+        cls.notify_clients_data({
+            "snapshot_folder": folder_path,
+            "save_snapshots_enabled": save_enabled
+        })
+
+    @classmethod
+    def save_snapshot_path_to_blend(cls, path):
+        """Save custom snapshot path to Blender scene."""
+        def _save():
+            try:
+                bpy.context.scene["brv_snapshot_path"] = path
+                if global_vars.debug:
+                    print(f"[BRV] Saved snapshot path to scene: {path}")
+            except Exception as e:
+                print(f"[BRV] Error saving snapshot path: {e}")
+            return None
+        bpy.app.timers.register(_save, first_interval=0.0)
+
+    @classmethod
+    def save_snapshot_setting_to_blend(cls, enabled):
+        """Save snapshot save enabled setting to Blender scene."""
+        def _save():
+            try:
+                bpy.context.scene["brv_save_snapshots"] = enabled
+                if global_vars.debug:
+                    print(f"[BRV] Saved snapshot setting: save_enabled={enabled}")
+            except Exception as e:
+                print(f"[BRV] Error saving snapshot setting: {e}")
+            return None
+        bpy.app.timers.register(_save, first_interval=0.0)
     @classmethod
     def update_local_status(cls, new_status):
         global_vars.status = new_status

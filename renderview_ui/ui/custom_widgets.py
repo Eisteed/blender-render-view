@@ -59,6 +59,7 @@ class SnapshotThumbs(QLabel):
         self.toggled = False
         self.is_set_as_a = False  # Flag to track if set as A
         self.is_set_as_b = False  # Flag to track if set as B
+        self.file_path = None  # Path to saved file on disk
         self.setStyleSheet("border: 1px solid transparent;")
         self.label = QLabel(self)
         self.label.setStyleSheet("color: white; background-color: black;")
@@ -108,10 +109,14 @@ class SnapshotThumbs(QLabel):
         
         elif action == delete_action:
             self.unmark()
+            # Delete file from disk via main_window
+            self.main_window.deleteSnapshotFile(self)
             parent_widget = self.parent()
             if parent_widget is not None:
                 parent_widget.layout().removeWidget(self)
                 self.deleteLater()  # Properly delete the widget
+            # Update panel visibility
+            self.main_window.updateSnapshotPanelVisibility()
 
     def mark_as(self, overlay_letter):
         if overlay_letter == "A":

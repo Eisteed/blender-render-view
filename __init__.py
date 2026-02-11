@@ -4,7 +4,6 @@ sys.dont_write_bytecode = True
 
 import os
 
-from time import sleep
 from subprocess import Popen
 import bpy # type: ignore
 from bpy.props import StringProperty, PointerProperty # type: ignore
@@ -34,49 +33,56 @@ class OP_CreateCleanRenderedView(Operator):
         bpy.app.timers.register(monitoring, first_interval=1)
 
         start_external_script()
-        tries = 0
-        while tries <= 5:
-            if global_vars.status == "extui_waiting":
-                if(global_vars.debug):print(f"[BRV] Connected to external ui..")
+        # Use a non-blocking timer to wait for external UI instead of blocking the main thread
+        global_vars._wait_tries = 0
+        bpy.app.timers.register(_wait_for_extui, first_interval=0.2)
+        return {'FINISHED'}
 
-                # Step 1: Create a new main window
-                bpy.ops.wm.window_new_main()
+def _wait_for_extui():
+    """Non-blocking timer that waits for external UI to connect."""
+    if global_vars.status == "extui_waiting":
+        if(global_vars.debug):print(f"[BRV] Connected to external ui..")
+        _create_viewport_window()
+        return None  # Stop timer
 
-                # Get the new window and its screen
-                new_window = bpy.context.window_manager.windows[-1]
-                global_vars.renderWindow = new_window
-                new_screen = new_window.screen
+    global_vars._wait_tries += 1
+    if global_vars._wait_tries > 30:  # 30 x 0.3s = ~9 seconds max
+        if(global_vars.debug):print(f"[BRV] Failed to load / connect to external ui..")
+        return None  # Stop timer
+    return 0.3  # Check again in 0.3s
 
-                # Step 2: Change an existing area to a 3D Viewport
-                new_area = new_screen.areas[0] 
-                new_area.type = 'VIEW_3D'
+def _create_viewport_window():
+    """Create the viewport window for the external UI to capture."""
+    # Step 1: Create a new main window
+    bpy.ops.wm.window_new_main()
 
-                # Set the new area to use the active camera and rendered shading mode
-                for space in new_area.spaces:
-                    if space.type == 'VIEW_3D':
-                        space.region_3d.view_perspective = 'CAMERA'
-                        space.shading.type = 'RENDERED'
-                        space.overlay.show_overlays = False
-                        space.show_region_header = False
-                        space.show_region_toolbar = False
-                        space.show_gizmo = False
-                        new_region = next((region for region in new_area.regions if region.type == 'WINDOW'), None)
-                        with bpy.context.temp_override(window=new_window, area=new_area, region=new_region):
-                            bpy.ops.screen.screen_full_area(use_hide_panels=True)
+    # Get the new window and its screen
+    new_window = bpy.context.window_manager.windows[-1]
+    global_vars.renderWindow = new_window
+    new_screen = new_window.screen
 
-                global_vars.resX = bpy.context.scene.render.resolution_x
-                global_vars.resY = bpy.context.scene.render.resolution_y
-                global_vars.resP = bpy.context.scene.render.resolution_percentage
+    # Step 2: Change an existing area to a 3D Viewport
+    new_area = new_screen.areas[0]
+    new_area.type = 'VIEW_3D'
 
-                SocketServer.update_status('viewport_created')
-                return {'FINISHED'}
+    # Set the new area to use the active camera and rendered shading mode
+    for space in new_area.spaces:
+        if space.type == 'VIEW_3D':
+            space.region_3d.view_perspective = 'CAMERA'
+            space.shading.type = 'RENDERED'
+            space.overlay.show_overlays = False
+            space.show_region_header = False
+            space.show_region_toolbar = False
+            space.show_gizmo = False
+            new_region = next((region for region in new_area.regions if region.type == 'WINDOW'), None)
+            with bpy.context.temp_override(window=new_window, area=new_area, region=new_region):
+                bpy.ops.screen.screen_full_area(use_hide_panels=True)
 
-            tries += 1
-            sleep(0.5)
-        if tries > 5:
-            if(global_vars.debug):print(f"[BRV] Failed to load / connect to external ui..")
-            #msgbox(context, "External UI failed to start", icon='ERROR', message_type='ERROR')
-            return {'FINISHED'}
+    global_vars.resX = bpy.context.scene.render.resolution_x
+    global_vars.resY = bpy.context.scene.render.resolution_y
+    global_vars.resP = bpy.context.scene.render.resolution_percentage
+
+    SocketServer.update_status('viewport_created')
 
 def start_external_script():
     site_packages_dir = None
@@ -129,6 +135,11 @@ def monitoring():
                     "first_run" : "true"
                 }
                 SocketServer.notify_clients_data(resolution_data)
+                # Send available render passes to UI
+                render_passes = [item.identifier for item in bpy.types.View3DShading.bl_rna.properties['render_pass'].enum_items]
+                SocketServer.notify_clients_data({"render_passes": render_passes})
+                # Send snapshot folder path to UI
+                SocketServer.send_snapshot_folder_to_ui()
                 global_vars.firstRun = False
             else:
                 center_cam.run(bpy, global_vars.renderWindow)
@@ -151,7 +162,7 @@ def check_and_send_resolution():
     current_res_x = bpy.context.scene.render.resolution_x
     current_res_y = bpy.context.scene.render.resolution_y
     current_res_p = bpy.context.scene.render.resolution_percentage
-    if (global_vars.resX != current_res_x) or (global_vars.resY != current_res_y) or (global_vars.resX != current_res_x):
+    if (global_vars.resX != current_res_x) or (global_vars.resY != current_res_y) or (global_vars.resP != current_res_p):
         global_vars.resX = current_res_x
         global_vars.resY = current_res_y
         global_vars.resP = current_res_p

@@ -12,7 +12,7 @@ https://www.youtube.com/watch?v=g3SEom4mJ3s
 
 - Save current render to png
 
-- Add Snapshot (unlimited)
+- Add Snapshots, optionnal save them to disk (default folder ./brv-snapshots)
 
 - Snapshot compare A & B (right click on a snapshot to set A or B)
 
@@ -23,6 +23,8 @@ https://www.youtube.com/watch?v=g3SEom4mJ3s
 - AOVs dropdown
 
 - Render region (using native blender render region)
+
+- 
 
 <h2>How to use:</h2>
 
@@ -42,10 +44,8 @@ Drag & drop brv_blender_render_view to install !
 
 <h3>Todos:</h3>
 
-- File path to save snapshots (re open them after restarting blender)
-
 - Button to start / pause / reload render
 
 - Toggle realtime / freeze tesselation
 
-- And other usefull stuff (my main reference is redshift renderview)
+- Other usefull stuff like postfx controls, RGBA value on cursor, snapshots information (render time, date, etc..)

@@ -1,7 +1,9 @@
 import os
-from PySide6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QWidget, QFileDialog, QMainWindow, QScrollArea, QComboBox # type: ignore
+import uuid
+import threading
+from PySide6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QWidget, QFileDialog, QMainWindow, QScrollArea, QComboBox, QLineEdit, QLabel, QPushButton, QFrame, QCheckBox # type: ignore
 from PySide6.QtGui import QAction, QPainter, QPainterPath, QPixmap, QImage, QIcon, QPolygonF, QMouseEvent, QTransform # type: ignore
-from PySide6.QtCore import QEvent, QObject, QPointF, Qt, QRectF, QSize  # type: ignore
+from PySide6.QtCore import QEvent, QObject, QPointF, Qt, QRectF, QSize, Slot  # type: ignore
 from core.capture import ScreenshotThread
 from ui.image_viewer import ImageViewer
 from ui.custom_widgets import SnapshotThumbs, CustomPushButton
@@ -55,8 +57,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.blender_hwnd = None
-        self.buttons = None 
-        self.initUI()
+        self.buttons = None
         self.cached_pixmap = None
         self.tempOverlay = None
         self.overlay_A = None
@@ -66,8 +67,16 @@ class MainWindow(QMainWindow):
         self.current_a_thumb = None  # Store the current "A" thumbnail
         self.current_b_thumb = None  # Store the current "B" thumbnail
         self.current_selected_index = -1  # Store the current selected thumbnail index
-        self.setFocusPolicy(Qt.StrongFocus)  # Ensure the main window can receive key events
         self.snapshots = []
+        self.snapshot_save_path = ""  # Will be set from Blender file path
+        self.snapshot_panel_visible = False  # Track if user manually toggled panel
+        self.snapshot_panel_auto_hidden = True  # Auto-hide when no snapshots
+        self.save_snapshots_enabled = True  # Whether to save snapshots to disk
+
+        # Initialize UI after attributes are set
+        self.initUI()
+
+        self.setFocusPolicy(Qt.StrongFocus)  # Ensure the main window can receive key events
         self.screenshot_thread = ScreenshotThread(data.Blender.windowHandle)
         self.screenshot_thread.imageCaptured.connect(self.updateImage)
         self.screenshot_thread.start()
@@ -92,17 +101,8 @@ class MainWindow(QMainWindow):
         self.viewer = ImageViewer()
         self.setCentralWidget(self.viewer)
 
-        # Create the scrollable image gallery at the bottom
-        self.scroll_area = QScrollArea(self)
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_widget = QWidget()
-        self.scroll_layout = QHBoxLayout(self.scroll_widget)
-        self.scroll_layout.setContentsMargins(0, 0, 0, 0)
-        self.scroll_layout.setSpacing(0)
-        self.scroll_widget.setLayout(self.scroll_layout)
-        self.scroll_area.setWidget(self.scroll_widget)
-        self.scroll_area.setFixedHeight(100 * self.devicePixelRatio())
-        self.scroll_layout.setAlignment(Qt.AlignLeft) 
+        # Create the snapshot bottom panel (settings + thumbnails + toggle)
+        self.createSnapshotPanel()
 
         # Create the horizontal menu with buttons
         self.createButtonMenu()
@@ -111,7 +111,7 @@ class MainWindow(QMainWindow):
         main_layout = QVBoxLayout()
         main_layout.addWidget(self.button_menu)
         main_layout.addWidget(self.viewer)
-        main_layout.addWidget(self.scroll_area)
+        main_layout.addWidget(self.snapshot_panel)
 
         # Set the central widget with the main layout
         central_widget = QWidget()
@@ -142,7 +142,192 @@ class MainWindow(QMainWindow):
 
         fitToZoomAction = QAction('Zoom 1:1', self)
         fitToZoomAction.triggered.connect(self.fitToZoom)
-        viewMenu.addAction(fitToZoomAction) 
+        viewMenu.addAction(fitToZoomAction)
+
+    def createSnapshotPanel(self):
+        """Create the bottom panel with settings, thumbnails, and toggle button."""
+        # Main container for the entire bottom panel
+        self.snapshot_panel = QWidget()
+        panel_layout = QVBoxLayout(self.snapshot_panel)
+        panel_layout.setContentsMargins(0, 0, 0, 0)
+        panel_layout.setSpacing(0)
+
+        # Top bar with just the toggle buttons (always visible)
+        top_bar = QHBoxLayout()
+        top_bar.setContentsMargins(0, 0, 0, 0)
+        top_bar.setSpacing(2)
+
+        # Toggle button (arrow to show/hide panel)
+        self.panel_toggle_btn = CustomPushButton()
+        self.panel_toggle_btn.setFixedSize(20, 20)
+        self.panel_toggle_btn.setText("\u25BC")  # Down arrow (panel visible)
+        self.panel_toggle_btn.setToolTip("Toggle snapshot panel")
+        self.panel_toggle_btn.clicked.connect(self.toggleSnapshotPanel)
+        self.panel_toggle_btn.setStyleSheet("font-size: 10px;")
+
+        # Settings toggle button (gear icon)
+        self.settings_toggle_btn = CustomPushButton()
+        self.settings_toggle_btn.setFixedSize(20, 20)
+        self.settings_toggle_btn.setText("\u2699")  # Gear unicode
+        self.settings_toggle_btn.setToolTip("Toggle snapshot settings")
+        self.settings_toggle_btn.clicked.connect(self.toggleSettingsPanel)
+        self.settings_toggle_btn.setStyleSheet("font-size: 12px;")
+
+        top_bar.addWidget(self.panel_toggle_btn)
+        top_bar.addWidget(self.settings_toggle_btn)
+        top_bar.addStretch()
+        panel_layout.addLayout(top_bar)
+
+        # Content area (collapsible) - contains settings and thumbnails
+        self.snapshot_content = QWidget()
+        content_layout = QHBoxLayout(self.snapshot_content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
+
+        # Settings panel (gear icon opens this)
+        self.settings_panel = QFrame()
+        self.settings_panel.setFrameStyle(QFrame.StyledPanel)
+        self.settings_panel.setFixedWidth(250)
+        settings_layout = QVBoxLayout(self.settings_panel)
+        settings_layout.setContentsMargins(5, 5, 5, 5)
+        settings_layout.setSpacing(5)
+
+        # Save path label and input
+        path_label = QLabel("Snapshot Save Path:")
+        path_label.setStyleSheet("color: white; font-size: 10px;")
+        settings_layout.addWidget(path_label)
+
+        path_row = QHBoxLayout()
+        self.path_input = QLineEdit()
+        self.path_input.setPlaceholderText("./brv-snapshots")
+        # Save path when user finishes editing (Enter or loses focus), not on every keystroke
+        self.path_input.editingFinished.connect(self.onSnapshotPathChanged)
+        path_row.addWidget(self.path_input)
+
+        browse_btn = QPushButton("...")
+        browse_btn.setFixedWidth(30)
+        browse_btn.clicked.connect(self.browseSnapshotPath)
+        path_row.addWidget(browse_btn)
+        settings_layout.addLayout(path_row)
+
+        # Save to disk checkbox
+        self.save_checkbox = QCheckBox("Save snapshots to disk")
+        self.save_checkbox.setChecked(self.save_snapshots_enabled)
+        self.save_checkbox.setStyleSheet("color: white; font-size: 10px;")
+        self.save_checkbox.stateChanged.connect(self.onSaveCheckboxChanged)
+        settings_layout.addWidget(self.save_checkbox)
+
+        settings_layout.addStretch()
+        self.settings_panel.hide()  # Hidden by default
+        content_layout.addWidget(self.settings_panel)
+
+        # Scrollable thumbnail area
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_widget = QWidget()
+        self.scroll_layout = QHBoxLayout(self.scroll_widget)
+        self.scroll_layout.setContentsMargins(0, 0, 0, 0)
+        self.scroll_layout.setSpacing(0)
+        self.scroll_widget.setLayout(self.scroll_layout)
+        self.scroll_area.setWidget(self.scroll_widget)
+        self.scroll_area.setFixedHeight(100 * self.devicePixelRatio())
+        self.scroll_layout.setAlignment(Qt.AlignLeft)
+        content_layout.addWidget(self.scroll_area)
+
+        # Add content area to panel
+        panel_layout.addWidget(self.snapshot_content)
+
+        # Initially hide the panel (auto-hide when no snapshots)
+        self.updateSnapshotPanelVisibility()
+
+    def toggleSettingsPanel(self):
+        """Toggle the settings panel visibility."""
+        if self.settings_panel.isVisible():
+            self.settings_panel.hide()
+        else:
+            self.settings_panel.show()
+
+    def toggleSnapshotPanel(self):
+        """Toggle the snapshot panel visibility manually."""
+        if self.snapshot_content.isVisible():
+            self.snapshot_content.hide()
+            self.settings_toggle_btn.hide()
+            self.panel_toggle_btn.setText("\u25B2")  # Up arrow (panel hidden)
+            self.snapshot_panel_visible = False
+        else:
+            self.snapshot_content.show()
+            self.settings_toggle_btn.show()
+            self.panel_toggle_btn.setText("\u25BC")  # Down arrow (panel visible)
+            self.snapshot_panel_visible = True
+
+    def updateSnapshotPanelVisibility(self):
+        """Auto-show/hide panel based on snapshot count, unless manually toggled."""
+        has_snapshots = self.scroll_layout.count() > 0
+
+        if has_snapshots:
+            # Always show when there are snapshots
+            self.snapshot_panel.show()
+            if not self.snapshot_panel_visible:
+                self.snapshot_content.show()
+                self.settings_toggle_btn.show()
+                self.panel_toggle_btn.setText("\u25BC")
+                self.snapshot_panel_visible = True
+        else:
+            # Hide when no snapshots (unless user manually showed it)
+            if self.snapshot_panel_auto_hidden:
+                self.snapshot_panel.hide()
+
+    def onSnapshotPathChanged(self):
+        """Handle snapshot path change (when user finishes editing)."""
+        self.snapshot_save_path = self.path_input.text()
+        # Save to Blender project
+        SocketClient.send_message({"snapshot_path": self.snapshot_save_path})
+        print(f"[BRV-UI] Snapshot path saved: {self.snapshot_save_path}")
+
+    def onSaveCheckboxChanged(self, state):
+        """Handle save checkbox change."""
+        # In PySide6, state is Qt.CheckState enum, use .value or compare with int 2
+        self.save_snapshots_enabled = (state == 2)  # Qt.CheckState.Checked == 2
+        # Save to Blender project
+        SocketClient.send_message({"save_snapshots_enabled": self.save_snapshots_enabled})
+        print(f"[BRV-UI] Save checkbox changed: {self.save_snapshots_enabled}")
+
+        # If enabled, save any existing unsaved snapshots
+        if self.save_snapshots_enabled:
+            self.saveExistingUnsavedSnapshots()
+
+    @Slot()
+    def updateSaveCheckbox(self):
+        """Update checkbox state from settings."""
+        self.save_checkbox.blockSignals(True)
+        self.save_checkbox.setChecked(self.save_snapshots_enabled)
+        self.save_checkbox.blockSignals(False)
+
+    @Slot()
+    def updateSnapshotPathInput(self):
+        """Update path input from settings."""
+        self.path_input.blockSignals(True)
+        self.path_input.setText(self.snapshot_save_path)
+        self.path_input.blockSignals(False)
+
+    @Slot()
+    def updateRenderPassDropdown(self):
+        """Update render pass dropdown with passes received from Blender."""
+        self.render_pass_dropdown.blockSignals(True)
+        self.render_pass_dropdown.clear()
+        self.render_pass_dropdown.addItems(data.Blender.renderPass)
+        self.render_pass_dropdown.blockSignals(False)
+
+    def browseSnapshotPath(self):
+        """Open folder browser for snapshot save path."""
+        folder = QFileDialog.getExistingDirectory(self, "Select Snapshot Folder")
+        if folder:
+            self.path_input.setText(folder)
+
+    def setSnapshotSavePath(self, path):
+        """Set the snapshot save path (called from Blender)."""
+        self.snapshot_save_path = path
+        self.path_input.setText(path)
 
     def createButtonMenu(self):
         self.button_menu = QWidget()
@@ -199,19 +384,17 @@ class MainWindow(QMainWindow):
                 self.buttons[function.__name__] = button
 
         # Add render pass Dropdown Menu
-        dropdown = QComboBox()
-        dropdown.setObjectName("RenderPassDropdown")  # Assign a unique name
-        dropdown.addItems(data.Blender.renderPass)
+        self.render_pass_dropdown = QComboBox()
+        self.render_pass_dropdown.setObjectName("RenderPassDropdown")
+        self.render_pass_dropdown.addItems(data.Blender.renderPass)
 
-        # Connect dropdown selection to a function 
+        # Connect dropdown selection to a function
         def on_dropdown_selected(index):
-            dropdown_name = dropdown.objectName()
-            data.Blender.renderPassActive = dropdown.currentText()
-            #print(f"Dropdown '{dropdown_name}' selected: {dropdown.currentText()}")
+            data.Blender.renderPassActive = self.render_pass_dropdown.currentText()
 
-        dropdown.currentIndexChanged.connect(on_dropdown_selected)
+        self.render_pass_dropdown.currentIndexChanged.connect(on_dropdown_selected)
 
-        h_layout.addWidget(dropdown)
+        h_layout.addWidget(self.render_pass_dropdown)
 
         # Align buttons to the left
         h_layout.addStretch()
@@ -413,7 +596,7 @@ class MainWindow(QMainWindow):
         self.viewer.setImage(blended_pixmap)
         self.viewer.setTransform(current_transform)
 
-    def add_image(self, pixmap):
+    def add_image(self, pixmap, file_path=None):
         if pixmap.isNull():
             print(f"[BRV-UI] No image to add")
             return
@@ -424,7 +607,79 @@ class MainWindow(QMainWindow):
         image_label.setPixmap(scaled_pixmap)
         image_label.setScaledContents(False)  # Ensure pixmap scales with label size
         image_label.clicked.connect(self.image_clicked)  # Connect directly to image_clicked
+
+        # Store file path if provided, or save new snapshot to disk in background
+        if file_path:
+            image_label.file_path = file_path
+        elif self.save_snapshots_enabled:
+            # Save snapshot to disk in background thread
+            image_label.file_path = None  # Will be set when save completes
+            self.saveSnapshotInBackground(pixmap, image_label)
+        else:
+            image_label.file_path = None  # Not saving to disk
+
         self.scroll_layout.insertWidget(0, image_label)
+        self.updateSnapshotPanelVisibility()
+
+    def saveSnapshotInBackground(self, pixmap, image_label):
+        """Save snapshot to disk in a background thread."""
+        # Convert pixmap to QImage for thread-safe saving
+        image = pixmap.toImage()
+
+        def _save():
+            if not self.snapshot_save_path:
+                save_dir = os.path.join(os.getcwd(), "brv-snapshots")
+            else:
+                save_dir = self.snapshot_save_path
+
+            # Create directory if it doesn't exist
+            try:
+                os.makedirs(save_dir, exist_ok=True)
+            except Exception as e:
+                print(f"[BRV-UI] Error creating snapshot directory: {e}")
+                return
+
+            # Generate unique filename
+            filename = f"snapshot_{uuid.uuid4().hex[:8]}.png"
+            file_path = os.path.join(save_dir, filename)
+
+            # Save the image
+            try:
+                image.save(file_path, "PNG")
+                image_label.file_path = file_path
+                print(f"[BRV-UI] Snapshot saved: {file_path}")
+            except Exception as e:
+                print(f"[BRV-UI] Error saving snapshot: {e}")
+
+        save_thread = threading.Thread(target=_save)
+        save_thread.daemon = True
+        save_thread.start()
+
+    def saveExistingUnsavedSnapshots(self):
+        """Save all existing snapshots that don't have a file_path to disk."""
+        # Iterate through all snapshot widgets in scroll_layout
+        for i in range(self.scroll_layout.count()):
+            widget = self.scroll_layout.itemAt(i).widget()
+            if isinstance(widget, SnapshotThumbs):
+                # Check if this snapshot doesn't have a file path yet
+                if not widget.file_path:
+                    # Save it in background
+                    self.saveSnapshotInBackground(widget.snapshot_fullres, widget)
+                    print(f"[BRV-UI] Saving existing unsaved snapshot to disk")
+
+    @Slot(str)
+    def loadSnapshot(self, file_path):
+        """Load a snapshot from disk. Can be called from any thread via Qt signal."""
+        if not os.path.exists(file_path):
+            print(f"[BRV-UI] Snapshot file not found: {file_path}")
+            return
+
+        pixmap = QPixmap(file_path)
+        if pixmap.isNull():
+            print(f"[BRV-UI] Failed to load snapshot: {file_path}")
+            return
+
+        self.add_image(pixmap, file_path)
     
     def navigate_thumbnails(self, direction):
         count = self.scroll_layout.count()
@@ -506,18 +761,33 @@ class MainWindow(QMainWindow):
         self.current_selected_index = -1
         if item is None:
             return
-        
+
         # Remove the item from the layout
         widget = item.widget()
 
         self.scroll_layout.removeWidget(widget)
-        
+
         # Optionally, delete the widget
         if widget is not None:
             if isinstance(widget, SnapshotThumbs):
-
                 widget.unmark()
+                # Delete file from disk
+                self.deleteSnapshotFile(widget)
             widget.deleteLater()
+
+        # Update panel visibility
+        self.updateSnapshotPanelVisibility()
+
+    def deleteSnapshotFile(self, snapshot_widget):
+        """Delete snapshot file from disk."""
+        if hasattr(snapshot_widget, 'file_path') and snapshot_widget.file_path:
+            file_path = snapshot_widget.file_path
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    print(f"[BRV-UI] Snapshot file deleted: {file_path}")
+            except Exception as e:
+                print(f"[BRV-UI] Error deleting snapshot file: {e}")
 
     def renderRegion(self):
         if(self.viewer.renderRegionEnabled):

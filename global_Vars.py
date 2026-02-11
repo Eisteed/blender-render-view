@@ -8,9 +8,9 @@ firstRun        = True
 status          = "initial"
 
 res_updating = False
-res_x = ""
-res_y = ""
-res_p = ""
+resX = 0
+resY = 0
+resP = 100
 
 rr_enabled = False
 xmin = ymin = xmax = ymax = 1
