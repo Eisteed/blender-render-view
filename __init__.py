@@ -82,6 +82,13 @@ def _create_viewport_window():
     global_vars.resY = bpy.context.scene.render.resolution_y
     global_vars.resP = bpy.context.scene.render.resolution_percentage
 
+    # Send resolution to external UI before signaling viewport_created
+    # so it has correct values when it resizes the window
+    SocketServer.notify_clients_data({
+        "resolution_x": global_vars.resX,
+        "resolution_y": global_vars.resY,
+        "resolution_percentage": global_vars.resP
+    })
     SocketServer.update_status('viewport_created')
 
 def start_external_script():
@@ -140,6 +147,7 @@ def monitoring():
                 SocketServer.notify_clients_data({"render_passes": render_passes})
                 # Send snapshot folder path to UI
                 SocketServer.send_snapshot_folder_to_ui()
+                center_cam.run(bpy, global_vars.renderWindow)
                 global_vars.firstRun = False
             else:
                 center_cam.run(bpy, global_vars.renderWindow)

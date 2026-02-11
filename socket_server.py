@@ -63,15 +63,19 @@ class SocketServer:
     @classmethod
     def handle_client(cls, conn, mask):
         try:
-            data = conn.recv(1024)
+            data = conn.recv(4096)
             if data:
-                try:
-                    received_json = json.loads(data.decode('utf-8'))
-                    cls.handle_message(received_json, conn)
-                    #if(global_vars.debug):print(f"[BRV] Received: {received_json}")
-                except json.JSONDecodeError as e:
-                    if(global_vars.debug):print(f"[BRV] JSONDecodeError: {e}")
-                    if(global_vars.debug):print(f"[BRV] Raw data: {data}")
+                # Split on newlines to handle multiple messages in one recv
+                for line in data.decode('utf-8').splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        received_json = json.loads(line)
+                        cls.handle_message(received_json, conn)
+                    except json.JSONDecodeError as e:
+                        if(global_vars.debug):print(f"[BRV] JSONDecodeError: {e}")
+                        if(global_vars.debug):print(f"[BRV] Raw data: {line}")
             else:
                 cls.disconnect(conn)
         except ConnectionResetError:
@@ -185,18 +189,18 @@ class SocketServer:
 
     @classmethod
     def notify_clients_status(cls):
-        status_data = json.dumps({"status": global_vars.status}).encode('utf-8')
+        status_data = (json.dumps({"status": global_vars.status}) + '\n').encode('utf-8')
         for conn in list(cls.clients):
             try:
                 conn.sendall(status_data)
             except Exception as e:
                 if(global_vars.debug):print(f"[BRV] Error notifying client: {e}")
                 cls.disconnect(conn)
-    
+
     @classmethod
     def notify_clients_data(cls, dictionary):
         # Convert the data dictionary to a JSON string and encode it to bytes
-        message = json.dumps(dictionary).encode('utf-8')
+        message = (json.dumps(dictionary) + '\n').encode('utf-8')
         # Send data to each client
         for conn in list(cls.clients):
             try:

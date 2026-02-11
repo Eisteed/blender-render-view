@@ -34,28 +34,30 @@ class SocketClient:
     def listen_for_updates(cls):
         while True:
             try:
-                datas = cls.client_socket.recv(1024)
+                datas = cls.client_socket.recv(4096)
                 if not datas:
                     if(data.Blender.debug):print(f"[BRV-UI] Socket connection closed")
                     return
                 else:
-                    message = json.loads(datas.decode('utf-8'))
-                    try:
-                        cls.handle_message(message)
-                    except Exception as e:
-                        # Don't break on message handling errors, just log them
-                        if(data.Blender.debug):
-                            print(f"[BRV-UI] Error handling message: {e}")
-                            print(f"[BRV-UI] Message was: {message}")
+                    # Split on newlines to handle multiple messages in one recv
+                    for line in datas.decode('utf-8').splitlines():
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            message = json.loads(line)
+                            cls.handle_message(message)
+                        except json.JSONDecodeError as e:
+                            if(data.Blender.debug):
+                                print(f"[BRV-UI] JSON decode error: {e}")
+                        except Exception as e:
+                            if(data.Blender.debug):
+                                print(f"[BRV-UI] Error handling message: {e}")
+                                print(f"[BRV-UI] Message was: {line}")
             except (ConnectionResetError, ConnectionAbortedError, OSError) as e:
-                # Socket connection errors - should break
                 if(data.Blender.debug):
                     print(f"[BRV-UI] Socket connection error: {e}")
                 break
-            except json.JSONDecodeError as e:
-                # JSON parsing error - log but continue
-                if(data.Blender.debug):
-                    print(f"[BRV-UI] JSON decode error: {e}")
             except Exception as e:
                 if(data.Blender.debug):
                     print(f"[BRV-UI] Unexpected error in listen_for_updates: {e}")
@@ -167,13 +169,11 @@ class SocketClient:
 
     @classmethod
     def send_message(cls, data):
-       
         try:
-            message_data = json.dumps(data).encode('utf-8')
+            message_data = (json.dumps(data) + '\n').encode('utf-8')
             cls.client_socket.sendall(message_data)
         except Exception as e:
-            if(data.Blender.debug): print("[BRV-UI] Failed to send message to blender: ", {e})
-            pass
+            print(f"[BRV-UI] Failed to send message to blender: {e}")
 
     @classmethod
     def stop(cls):
