@@ -119,7 +119,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
 
         self.createMenus()
-        self.setWindowTitle('Blender Render View (IPR) v0.3')
+        self.setWindowTitle('Blender Render View (IPR)')
         self.showMaximized() 
         self.viewer.centerOn(self.viewer.image_item.boundingRect().center())
 
