@@ -22,6 +22,7 @@ wheels = [
     "./wheels/PySide6_Addons-6.6.0-cp38-abi3-win_amd64.whl",
     "./wheels/shiboken6-6.6.0-cp38-abi3-win_amd64.whl",
     "./wheels/pywin32-310-cp311-cp311-win_amd64.whl",
+    "./wheels/pywin32-310-cp313-cp313-win_amd64.whl",
     "./wheels/PyGetWindow-0.0.9-py3-none-any.whl",
     "./wheels/PyRect-0.2.0-py2.py3-none-any.whl"
 ]
