@@ -95,9 +95,11 @@ def start_external_script():
     site_packages_dir = None
 
     for path in sys.path:
-        if path.endswith(r'extensions\.local\lib\python3.11\site-packages'):
+        norm = path.replace("\\", "/").lower()
+
+        if "extensions/.local/lib" in norm and norm.endswith("/site-packages"):
             site_packages_dir = path
-            break 
+            break
 
     if not site_packages_dir:
         if(global_vars.debug):print(f"[BRV] Could not find site-packages directory in sys.path")

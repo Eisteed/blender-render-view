@@ -1,7 +1,9 @@
 
 import os, sys, ctypes, importlib
 def find_site_packages_path():
+    print(f"Searching for site-packages in sys.path...")
     for path in sys.path:
+       
         if path and "site-packages" in path.replace("\\", "/").lower():
             if os.path.isdir(path):
                 return path
@@ -21,6 +23,7 @@ def loadWin32():
     loaded_modules = {}
     
     if not site_packages_dir:
+
         print("Could not find site-packages directory in sys.path")
     
     # Define the pywin32_system32 directory

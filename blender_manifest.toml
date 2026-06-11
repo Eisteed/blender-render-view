@@ -17,14 +17,13 @@ license = [
 platforms = ["windows-x64"]
 
 wheels = [
-    "./wheels/PySide6-6.6.0-cp38-abi3-win_amd64.whl",
-    "./wheels/PySide6_Essentials-6.6.0-cp38-abi3-win_amd64.whl",
-    "./wheels/PySide6_Addons-6.6.0-cp38-abi3-win_amd64.whl",
-    "./wheels/shiboken6-6.6.0-cp38-abi3-win_amd64.whl",
+    "./wheels/PySide6-6.9.3-cp39-abi3-win_amd64.whl",
+    "./wheels/PySide6_Essentials-6.9.3-cp39-abi3-win_amd64.whl",
+    "./wheels/shiboken6-6.9.3-cp39-abi3-win_amd64.whl",
     "./wheels/pywin32-310-cp311-cp311-win_amd64.whl",
-    "./wheels/pywin32-310-cp313-cp313-win_amd64.whl",
-    "./wheels/PyGetWindow-0.0.9-py3-none-any.whl",
-    "./wheels/PyRect-0.2.0-py2.py3-none-any.whl"
+    "./wheels/pywin32-311-cp313-cp313-win_amd64.whl",
+    "./wheels/pygetwindow-0.0.9-py3-none-any.whl",
+    "./wheels/pyrect-0.2.0-py2.py3-none-any.whl"
 ]
 
 [permissions]
