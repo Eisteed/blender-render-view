@@ -1,5 +1,4 @@
 <h1>Blender Render View.</h1>
-(This is a beta an may be unstable, do not use in production.)
 
 External render window similar to classic IPR (maya, 3dsmax, C4D ..).
 This open an external UI and stream a rendered viewport matching the render resolution.
